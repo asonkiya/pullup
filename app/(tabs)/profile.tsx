@@ -50,7 +50,12 @@ export default function ProfileScreen() {
   function signOut() {
     Alert.alert('Sign out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => supabase.auth.signOut() },
+      { text: 'Sign out', style: 'destructive', onPress: async () => {
+        if (profile) {
+          await supabase.from('users').update({ push_token: null }).eq('id', profile.id);
+        }
+        await supabase.auth.signOut();
+      }},
     ]);
   }
 
@@ -103,13 +108,23 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Phone */}
+          {/* Email */}
           <View style={styles.section}>
-            <Text style={styles.label}>Phone</Text>
+            <Text style={styles.label}>Email</Text>
             <View style={styles.fieldRow}>
-              <Text style={styles.fieldValue}>{phone ?? '—'}</Text>
+              <Text style={styles.fieldValue}>{profile?.email ?? '—'}</Text>
             </View>
           </View>
+
+          {/* Phone */}
+          {phone && (
+            <View style={styles.section}>
+              <Text style={styles.label}>Phone</Text>
+              <View style={styles.fieldRow}>
+                <Text style={styles.fieldValue}>{phone}</Text>
+              </View>
+            </View>
+          )}
 
           {/* Member since */}
           {profile?.created_at && (
