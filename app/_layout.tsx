@@ -6,18 +6,19 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 
-function useProtectedRoute(session: Session | null) {
+function useProtectedRoute(session: Session | null, ready: boolean) {
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
+    if (!ready) return;
     const inAuthGroup = segments[0] === '(auth)';
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [session, segments]);
+  }, [session, segments, ready]);
 }
 
 export default function RootLayout() {
@@ -63,9 +64,7 @@ export default function RootLayout() {
     return () => sub.remove();
   }, [session]);
 
-  useProtectedRoute(session);
-
-  if (!ready) return null;
+  useProtectedRoute(session, ready);
 
   return (
     <>

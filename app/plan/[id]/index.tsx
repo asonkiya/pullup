@@ -30,6 +30,7 @@ export default function PlanDetailScreen() {
     const channel = supabase
       .channel(`plan-${id}`)
       .on('broadcast', { event: 'plan_updated' }, () => fetchPlan())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plans', filter: `id=eq.${id}` }, () => fetchPlan())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_members', filter: `plan_id=eq.${id}` }, () => fetchPlan())
       .subscribe();
     return () => { supabase.removeChannel(channel); };

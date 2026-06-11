@@ -191,23 +191,30 @@ create policy "users_select_coplan" on public.users for select to authenticated
   ));
 
 -- plans
+create policy "plans_select_creator" on public.plans for select to authenticated
+  using ((select auth.uid()) = creator_user_id);
 create policy "plans_select_member" on public.plans for select to authenticated
-  using (exists (
-    select 1 from public.plan_members pm
-    where pm.plan_id = id and pm.user_id = (select auth.uid())
-  ));
+  using (id in (select public.my_plan_ids()));
 create policy "plans_insert_creator" on public.plans for insert to authenticated
   with check ((select auth.uid()) = creator_user_id);
 create policy "plans_update_creator" on public.plans for update to authenticated
   using  ((select auth.uid()) = creator_user_id)
   with check ((select auth.uid()) = creator_user_id);
 
+-- Helper: returns plan_ids the current user belongs to (security definer avoids RLS recursion)
+create or replace function public.my_plan_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select plan_id from public.plan_members where user_id = (select auth.uid());
+$$;
+
 -- plan_members
 create policy "pm_select" on public.plan_members for select to authenticated
-  using (exists (
-    select 1 from public.plan_members pm2
-    where pm2.plan_id = plan_id and pm2.user_id = (select auth.uid())
-  ));
+  using (plan_id in (select public.my_plan_ids()));
 create policy "pm_insert_self" on public.plan_members for insert to authenticated
   with check ((select auth.uid()) = user_id);
 create policy "pm_update_self" on public.plan_members for update to authenticated
@@ -298,7 +305,7 @@ create policy "ae_insert_own" on public.analytics_events for insert to authentic
 -- AUTO-CREATE USER PROFILE ON SIGNUP
 -- ─────────────────────────────────────────────────────────────
 create or replace function public.handle_new_user()
-returns trigger language plpgsql security invoker as $$
+returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   insert into public.users (id, display_name, phone_e164, email)
   values (

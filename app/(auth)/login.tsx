@@ -9,29 +9,31 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS, SPACING, FONT_SIZE } from '@/constants';
 
 export default function LoginScreen() {
-  const [phone, setPhone] = useState('');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('dev@hangout.com');
+  const [password, setPassword] = useState('password123');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
-  async function sendOtp() {
-    const normalized = phone.trim().replace(/\s/g, '');
-    if (!normalized.startsWith('+')) {
-      Alert.alert('Enter your phone number starting with country code, e.g. +1');
+  async function submit() {
+    const e = email.trim().toLowerCase();
+    if (!e || !password) {
+      Alert.alert('Enter your email and password');
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalized });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
+    if (mode === 'signin') {
+      const { error } = await supabase.auth.signInWithPassword({ email: e, password });
+      if (error) Alert.alert('Sign in failed', error.message);
+    } else {
+      const { error } = await supabase.auth.signUp({ email: e, password });
+      if (error) Alert.alert('Sign up failed', error.message);
+      // _layout.tsx session listener handles redirect on success
     }
-    router.push({ pathname: '/(auth)/verify', params: { phone: normalized } });
+    setLoading(false);
   }
 
   return (
@@ -44,31 +46,50 @@ export default function LoginScreen() {
         <Text style={styles.tagline}>
           Pick a place. Share ETA for this plan only. See who's almost there.
         </Text>
+
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tab, mode === 'signin' && styles.tabActive]}
+            onPress={() => setMode('signin')}
+          >
+            <Text style={[styles.tabText, mode === 'signin' && styles.tabTextActive]}>Sign in</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, mode === 'signup' && styles.tabActive]}
+            onPress={() => setMode('signup')}
+          >
+            <Text style={[styles.tabText, mode === 'signup' && styles.tabTextActive]}>Create account</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.form}>
-          <Text style={styles.label}>Phone number</Text>
           <TextInput
             style={styles.input}
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="+1 555 000 0000"
-            keyboardType="phone-pad"
-            autoComplete="tel"
-            autoFocus
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            secureTextEntry
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
           />
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={sendOtp}
+            onPress={submit}
             disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Sending...' : 'Continue'}
+              {loading ? '...' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.legal}>
-          By continuing, you agree to our Terms and Privacy Policy. Location is
-          only shared when you explicitly choose, for a specific plan only.
-        </Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -89,16 +110,27 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   tagline: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, lineHeight: 22 },
-  form: { gap: SPACING.sm, marginTop: SPACING.md },
-  label: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.text },
+  tabs: { flexDirection: 'row', gap: SPACING.sm },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  tabActive: { backgroundColor: COLORS.primaryLight },
+  tabText: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.textSecondary },
+  tabTextActive: { color: COLORS.primary },
+  form: { gap: SPACING.sm },
   input: {
     borderWidth: 1.5,
     borderColor: COLORS.border,
     borderRadius: 12,
     paddingHorizontal: SPACING.md,
     paddingVertical: 14,
-    fontSize: FONT_SIZE.lg,
+    fontSize: FONT_SIZE.md,
     color: COLORS.text,
+    backgroundColor: COLORS.background,
   },
   button: {
     backgroundColor: COLORS.primary,
@@ -109,10 +141,4 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: FONT_SIZE.md, fontWeight: '600' },
-  legal: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 16,
-  },
 });

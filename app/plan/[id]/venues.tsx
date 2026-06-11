@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { COLORS, SPACING, FONT_SIZE, AUTO_SELECT_THRESHOLD } from '@/constants';
 import type { VenueCandidateRow } from '@/types/database';
@@ -47,7 +48,20 @@ export default function VenuesScreen() {
       return;
     }
 
-    // No candidates yet — invoke edge function
+    // No candidates yet — get location then invoke edge function
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setError('Location permission is needed to find venues near you.');
+      setLoading(false);
+      return;
+    }
+
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    await supabase
+      .from('plans')
+      .update({ anchor_lat: pos.coords.latitude, anchor_lng: pos.coords.longitude })
+      .eq('id', id!);
+
     const { data: { session } } = await supabase.auth.getSession();
     const { error: fnError } = await supabase.functions.invoke('search-venues', {
       body: { plan_id: id! },
