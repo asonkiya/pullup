@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS, SPACING, FONT_SIZE } from '@/constants';
 import type { PlanRow } from '@/types/database';
@@ -18,8 +18,11 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     fetchPlans();
+  }, []));
+
+  useEffect(() => {
     const channel = supabase
       .channel('plans-list')
       .on(
