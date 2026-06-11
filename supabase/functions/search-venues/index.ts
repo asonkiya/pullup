@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.rating,places.priceLevel,places.primaryTypeDisplayName',
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.priceLevel,places.primaryTypeDisplayName,places.photos,places.shortFormattedAddress,places.websiteUri,places.googleMapsUri,places.currentOpeningHours',
     },
     body: JSON.stringify({
       includedTypes,
@@ -142,19 +142,35 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 3. Build rows with eta, sort by it
-  const rows = places.map((place, i) => ({
-    plan_id,
-    google_place_id: place.id as string,
-    name: (place.displayName as { text: string })?.text ?? 'Unknown',
-    lat: (place.location as { latitude: number })?.latitude,
-    lng: (place.location as { longitude: number })?.longitude,
-    rating: typeof place.rating === 'number' ? place.rating : null,
-    price_level: PRICE_LEVEL_MAP[place.priceLevel as string] ?? null,
-    category: (place.primaryTypeDisplayName as { text: string } | null)?.text ?? null,
-    source: 'nearby_search',
-    eta_seconds: etaMap.get(i) ?? null,
-  }));
+  // 3. Build rows with eta + rich data, sort by it
+  const rows = places.map((place, i) => {
+    const photos = place.photos as Array<{ name: string }> | undefined;
+    const photoUrls = photos
+      ?.slice(0, 5)
+      .map((p) => `https://places.googleapis.com/v1/${p.name}/media?maxHeightPx=800&key=${GOOGLE_MAPS_API_KEY}`)
+      ?? null;
+
+    const openingHours = place.currentOpeningHours as { openNow?: boolean } | undefined;
+
+    return {
+      plan_id,
+      google_place_id: place.id as string,
+      name: (place.displayName as { text: string })?.text ?? 'Unknown',
+      lat: (place.location as { latitude: number })?.latitude,
+      lng: (place.location as { longitude: number })?.longitude,
+      rating: typeof place.rating === 'number' ? place.rating : null,
+      user_rating_count: typeof place.userRatingCount === 'number' ? place.userRatingCount : null,
+      price_level: PRICE_LEVEL_MAP[place.priceLevel as string] ?? null,
+      category: (place.primaryTypeDisplayName as { text: string } | null)?.text ?? null,
+      source: 'nearby_search',
+      eta_seconds: etaMap.get(i) ?? null,
+      photo_urls: photoUrls,
+      address: (place.shortFormattedAddress as string) ?? null,
+      website_url: (place.websiteUri as string) ?? null,
+      maps_url: (place.googleMapsUri as string) ?? null,
+      is_open: openingHours?.openNow ?? null,
+    };
+  });
 
   // Sort by ETA (nulls last)
   rows.sort((a, b) => {

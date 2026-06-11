@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
   Dimensions,
   Alert,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -245,9 +247,21 @@ export default function VenuesScreen() {
         ) : current ? (
           <>
             <View style={[styles.card, { width: CARD_WIDTH }]}>
+              {current.photo_urls?.[0] ? (
+                <Image
+                  source={{ uri: current.photo_urls[0] }}
+                  style={styles.cardImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.cardImagePlaceholder}>
+                  <Text style={styles.cardImagePlaceholderText}>{current.name[0]}</Text>
+                </View>
+              )}
               <View style={styles.cardContent}>
                 <Text style={styles.venueName}>{current.name}</Text>
                 {current.category && <Text style={styles.venueCat}>{current.category}</Text>}
+                {current.address && <Text style={styles.venueAddress}>{current.address}</Text>}
                 <View style={styles.meta}>
                   {current.eta_seconds != null && (
                     <Text style={styles.etaChip}>
@@ -256,15 +270,32 @@ export default function VenuesScreen() {
                         : `~${Math.round(current.eta_seconds / 60)} min away`}
                     </Text>
                   )}
-                  {current.rating != null && <Text style={styles.metaChip}>★ {current.rating}</Text>}
+                  {current.rating != null && (
+                    <Text style={styles.metaChip}>
+                      {'★ ' + current.rating}
+                      {current.user_rating_count ? ` (${current.user_rating_count})` : ''}
+                    </Text>
+                  )}
                   {current.price_level != null && current.price_level > 0 && (
                     <Text style={styles.metaChip}>{'$'.repeat(current.price_level)}</Text>
                   )}
+                  {current.is_open != null && (
+                    <Text style={[styles.metaChip, current.is_open ? styles.openChip : styles.closedChip]}>
+                      {current.is_open ? 'Open' : 'Closed'}
+                    </Text>
+                  )}
                 </View>
               </View>
-              <TouchableOpacity style={styles.lockBtn} onPress={() => selectVenue(current)}>
-                <Text style={styles.lockBtnText}>Lock this in</Text>
-              </TouchableOpacity>
+              <View style={styles.cardActions}>
+                {current.maps_url && (
+                  <TouchableOpacity style={styles.mapsLink} onPress={() => Linking.openURL(current.maps_url!)}>
+                    <Text style={styles.mapsLinkText}>Open in Maps</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={styles.lockBtn} onPress={() => selectVenue(current)}>
+                  <Text style={styles.lockBtnText}>Lock this in</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.swipeActions}>
               <TouchableOpacity style={[styles.swipeBtn, styles.swipeNo]} onPress={() => swipe('left')}>
@@ -306,12 +337,22 @@ const styles = StyleSheet.create({
     elevation: 6,
     overflow: 'hidden',
   },
-  cardContent: { padding: SPACING.xl, gap: SPACING.sm, minHeight: 200 },
-  venueName: { fontSize: FONT_SIZE.xxl, fontWeight: '700', color: COLORS.text },
-  venueCat: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  meta: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  cardImage: { width: '100%', height: 220 },
+  cardImagePlaceholder: {
+    width: '100%',
+    height: 220,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardImagePlaceholderText: { fontSize: 64, fontWeight: '700', color: COLORS.primary, opacity: 0.3 },
+  cardContent: { padding: SPACING.md, gap: SPACING.xs },
+  venueName: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
+  venueCat: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
+  venueAddress: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs, marginTop: SPACING.xs },
   metaChip: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     backgroundColor: COLORS.background,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
@@ -320,7 +361,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   etaChip: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     backgroundColor: COLORS.primaryLight,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
@@ -329,8 +370,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     overflow: 'hidden',
   },
-  lockBtn: { borderTopWidth: 1, borderTopColor: COLORS.border, paddingVertical: SPACING.md, alignItems: 'center' },
-  lockBtnText: { fontSize: FONT_SIZE.md, fontWeight: '700', color: COLORS.primary },
+  openChip: { backgroundColor: '#DCFCE7', color: COLORS.success },
+  closedChip: { backgroundColor: '#FEE2E2', color: COLORS.error },
+  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border },
+  mapsLink: { flex: 1, paddingVertical: SPACING.md, alignItems: 'center', borderRightWidth: 1, borderRightColor: COLORS.border },
+  mapsLinkText: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.textSecondary },
+  lockBtn: { flex: 1, paddingVertical: SPACING.md, alignItems: 'center' },
+  lockBtnText: { fontSize: FONT_SIZE.sm, fontWeight: '700', color: COLORS.primary },
   swipeActions: { flexDirection: 'row', gap: SPACING.lg },
   swipeBtn: { flex: 1, paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   swipeNo: { backgroundColor: '#FEE2E2' },
