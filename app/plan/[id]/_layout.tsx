@@ -7,6 +7,7 @@ export default function PlanLayout() {
       <Stack.Screen name="venues" />
       <Stack.Screen name="eta" />
       <Stack.Screen name="chat" />
+      <Stack.Screen name="edit" />
     </Stack>
   );
 }

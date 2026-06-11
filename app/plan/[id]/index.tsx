@@ -298,6 +298,11 @@ export default function PlanDetailScreen() {
         {/* Actions */}
         {!isTerminal && (
           <View style={styles.actions}>
+            {isHost && (
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push(`/plan/${id}/edit`)}>
+                <Text style={styles.secondaryBtnText}>Edit plan</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.secondaryBtn} onPress={shareInviteLink}>
               <Text style={styles.secondaryBtnText}>Invite friends</Text>
             </TouchableOpacity>
