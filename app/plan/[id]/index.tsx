@@ -10,11 +10,16 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  Image,
+  Linking,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
-import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus } from '@/types/database';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
+import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar } from '@/components/ui';
+import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
 
 type MemberWithUser = PlanMemberRow & { users: UserRow };
 
@@ -22,6 +27,9 @@ export default function PlanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [members, setMembers] = useState<MemberWithUser[]>([]);
+  const [venueDetails, setVenueDetails] = useState<VenueCandidateRow | null>(null);
+  const [swipeProgress, setSwipeProgress] = useState({ swiped: 0, total: 0 });
+  const [lastMessage, setLastMessage] = useState<{ body: string; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [settingArrival, setSettingArrival] = useState(false);
@@ -30,23 +38,60 @@ export default function PlanDetailScreen() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setCurrentUserId(user?.id ?? null));
-    fetchPlan();
+    fetchAll();
     const channel = supabase
       .channel(`plan-${id}`)
-      .on('broadcast', { event: 'plan_updated' }, () => fetchPlan())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plans', filter: `id=eq.${id}` }, () => fetchPlan())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_members', filter: `plan_id=eq.${id}` }, () => fetchPlan())
+      .on('broadcast', { event: 'plan_updated' }, () => fetchAll())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plans', filter: `id=eq.${id}` }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_members', filter: `plan_id=eq.${id}` }, () => fetchAll())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id]);
 
-  async function fetchPlan() {
+  async function fetchAll() {
     const [planRes, membersRes] = await Promise.all([
       supabase.from('plans').select('*').eq('id', id!).single(),
       supabase.from('plan_members').select('*, users(*)').eq('plan_id', id!),
     ]);
-    if (planRes.data) setPlan(planRes.data);
+    if (planRes.data) {
+      setPlan(planRes.data);
+      // Fetch venue details if locked
+      if (planRes.data.selected_place_id) {
+        const { data: v } = await supabase
+          .from('venue_candidates')
+          .select('*')
+          .eq('plan_id', id!)
+          .eq('google_place_id', planRes.data.selected_place_id)
+          .single();
+        if (v) setVenueDetails(v);
+      }
+    }
     if (membersRes.data) setMembers(membersRes.data as unknown as MemberWithUser[]);
+
+    // Swipe progress
+    const { count: total } = await supabase
+      .from('venue_candidates')
+      .select('*', { count: 'exact', head: true })
+      .eq('plan_id', id!);
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    const { count: swiped } = await supabase
+      .from('venue_swipes')
+      .select('*', { count: 'exact', head: true })
+      .eq('plan_id', id!)
+      .eq('user_id', uid!);
+    setSwipeProgress({ swiped: swiped ?? 0, total: total ?? 0 });
+
+    // Last chat message
+    const { data: msgs } = await supabase
+      .from('plan_messages')
+      .select('body, users(display_name)')
+      .eq('plan_id', id!)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (msgs?.[0]) {
+      setLastMessage({ body: msgs[0].body, name: (msgs[0].users as any)?.display_name ?? '?' });
+    }
+
     setLoading(false);
   }
 
@@ -55,15 +100,8 @@ export default function PlanDetailScreen() {
     const token = Math.random().toString(36).slice(2, 10);
     const { data: invite } = await supabase
       .from('plan_invites')
-      .insert({
-        plan_id: id!,
-        token,
-        inviter_user_id: currentUserId,
-        status: 'pending',
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .select()
-      .single();
+      .insert({ plan_id: id!, token, inviter_user_id: currentUserId, status: 'pending', expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+      .select().single();
     if (!invite) return;
     Share.share({ message: `Join my hangout: ${plan.title}\nhangout://join/${invite.token}` });
   }
@@ -72,12 +110,7 @@ export default function PlanDetailScreen() {
     if (!currentUserId || !plan) return;
     const myName = members.find(m => m.user_id === currentUserId)?.users?.display_name ?? 'Someone';
     supabase.functions.invoke('notify', {
-      body: {
-        event,
-        plan_id: id,
-        actor_user_id: currentUserId,
-        extra: { actor_name: myName, plan_title: plan.title, ...extra },
-      },
+      body: { event, plan_id: id, actor_user_id: currentUserId, extra: { actor_name: myName, plan_title: plan.title, ...extra } },
     });
   }
 
@@ -109,13 +142,8 @@ export default function PlanDetailScreen() {
   }
 
   async function saveArrivalTime() {
-    if (!arrivalInput.match(/^\d{1,2}:\d{2}$/)) {
-      Alert.alert('Enter time as HH:MM');
-      return;
-    }
-    const base = plan?.scheduled_for
-      ? new Date(plan.scheduled_for).toDateString()
-      : new Date().toDateString();
+    if (!arrivalInput.match(/^\d{1,2}:\d{2}$/)) { Alert.alert('Enter time as HH:MM'); return; }
+    const base = plan?.scheduled_for ? new Date(plan.scheduled_for).toDateString() : new Date().toDateString();
     const iso = new Date(`${base} ${arrivalInput}`).toISOString();
     await supabase.from('plans').update({ arrival_time: iso }).eq('id', id!);
     setSettingArrival(false);
@@ -124,347 +152,501 @@ export default function PlanDetailScreen() {
 
   async function updateDepartureStatus(status: DepartureStatus) {
     if (!currentUserId) return;
-    await supabase
-      .from('plan_members')
-      .update({ departure_status: status })
-      .eq('plan_id', id!)
-      .eq('user_id', currentUserId);
+    await supabase.from('plan_members').update({ departure_status: status }).eq('plan_id', id!).eq('user_id', currentUserId);
     notifyMembers(status === 'leaving' ? 'leaving' : 'arrived');
   }
 
-  const isHost = members.find(m => m.user_id === currentUserId)?.role === 'host';
-  const myMember = members.find(m => m.user_id === currentUserId);
-  const isActive = plan?.state === 'active';
+  const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
+  const myMember   = members.find(m => m.user_id === currentUserId);
+  const isActive   = plan?.state === 'active';
   const isTerminal = plan?.state === 'completed' || plan?.state === 'cancelled';
-  const hasVenue = !!plan?.selected_place_id;
-  const canShareEta = plan?.state === 'venue_locked' || plan?.state === 'active';
+  const hasVenue   = !!plan?.selected_place_id;
 
-  if (loading) {
+  if (loading) return (
+    <SafeAreaView style={styles.container}>
+      <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
+    </SafeAreaView>
+  );
+
+  if (!plan) return (
+    <SafeAreaView style={styles.container}>
+      <Text style={{ textAlign: 'center', marginTop: 80, color: COLORS.textSecondary }}>Plan not found.</Text>
+    </SafeAreaView>
+  );
+
+  const overflowMenu = isHost ? (
+    <TouchableOpacity
+      onPress={() => Alert.alert('Options', '', [
+        { text: 'Edit plan', onPress: () => router.push(`/plan/${id}/edit`) },
+        { text: 'Cancel plan', style: 'destructive', onPress: cancelPlan },
+        ...(isActive ? [{ text: 'End plan', style: 'destructive' as const, onPress: endPlan }] : []),
+        { text: 'Dismiss', style: 'cancel' },
+      ])}
+    >
+      <Feather name="more-horizontal" size={22} color={COLORS.textSecondary} />
+    </TouchableOpacity>
+  ) : undefined;
+
+  // ── PLANNING state ────────────────────────────────────────────────────────
+  if (plan.state === 'open') {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
+        <View style={styles.header}>
+          <NavHead onBack={() => router.back()} title={plan.title} right={
+            <View style={styles.headerRight}>
+              <StatePill state={plan.state} />
+              {overflowMenu}
+            </View>
+          } />
+          <View style={styles.metaRow}>
+            {plan.vibe && <VibeChip vibe={plan.vibe} selected small />}
+            {plan.scheduled_for && (
+              <Text style={styles.metaText}>
+                {new Date(plan.scheduled_for).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </Text>
+            )}
+          </View>
+        </View>
+        <ScrollView contentContainerStyle={styles.body}>
+          {/* Voting card */}
+          <View style={styles.votingCard}>
+            <Text style={styles.votingTitle}>Find the spot</Text>
+            {swipeProgress.total > 0 ? (
+              <>
+                <Text style={styles.votingSub}>
+                  {swipeProgress.swiped} of {swipeProgress.total} venues swiped
+                </Text>
+                <ProgressBar progress={swipeProgress.swiped / swipeProgress.total} color={COLORS.primary} />
+              </>
+            ) : (
+              <Text style={styles.votingSub}>Browse venues and vote with your crew</Text>
+            )}
+            <HButton label="Swipe venues" variant="primary" size="md" fullWidth onPress={() => router.push(`/plan/${id}/venues`)} />
+          </View>
+
+          {/* Crew */}
+          <View style={styles.section}>
+            <Label>Crew · {members.length}</Label>
+            <View style={styles.crewRow}>
+              {members.map((m, i) => (
+                <Avatar key={m.id} name={m.users?.display_name ?? '?'} index={i} size={38} />
+              ))}
+              <TouchableOpacity style={styles.addCircle} onPress={shareInviteLink}>
+                <Feather name="plus" size={17} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Bottom actions */}
+          <View style={styles.actionRow}>
+            <HButton label="Chat" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
+            {isHost && (
+              <HButton label="Edit plan" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/edit`)} />
+            )}
+          </View>
+
+          <Text style={styles.footerHint}>Map, ETA and arrivals appear once the plan is locked.</Text>
+        </ScrollView>
       </SafeAreaView>
     );
   }
-  if (!plan) {
+
+  // ── LOCKED state ──────────────────────────────────────────────────────────
+  if (plan.state === 'venue_locked') {
+    const venuePhoto = (venueDetails?.photo_urls as string[] | null)?.[0];
+    const daysTo = plan.scheduled_for
+      ? Math.ceil((new Date(plan.scheduled_for).getTime() - Date.now()) / 86_400_000)
+      : null;
+
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: 80, color: COLORS.textSecondary }}>Plan not found.</Text>
+        <View style={styles.header}>
+          <NavHead onBack={() => router.back()} title={plan.title} right={
+            <View style={styles.headerRight}>
+              <StatePill state={plan.state} />
+              {overflowMenu}
+            </View>
+          } />
+        </View>
+        <ScrollView contentContainerStyle={styles.body}>
+          {/* Venue card */}
+          <Card pad={0} style={{ overflow: 'hidden' }}>
+            {venuePhoto ? (
+              <Image source={{ uri: venuePhoto }} style={styles.venuePhoto} resizeMode="cover" />
+            ) : (
+              <View style={[styles.venuePhoto, { backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' }]}>
+                <Text style={{ fontSize: 60, fontFamily: FONTS.extrabold, color: COLORS.primary, opacity: 0.25 }}>
+                  {plan.selected_place_name?.[0]}
+                </Text>
+              </View>
+            )}
+            <View style={{ padding: 16, gap: SPACING.sm }}>
+              <View style={styles.venueTitleRow}>
+                <Text style={styles.venueCardName}>{plan.selected_place_name}</Text>
+                {venueDetails?.eta_seconds != null && (
+                  <View style={styles.etaChip}>
+                    <Text style={styles.etaChipText}>{Math.round(venueDetails.eta_seconds / 60)} min away</Text>
+                  </View>
+                )}
+              </View>
+              {venueDetails?.address && (
+                <Text style={styles.venueAddress}>{venueDetails.address}</Text>
+              )}
+              <View style={styles.actionRow}>
+                {venueDetails?.maps_url && (
+                  <HButton label="Directions" variant="primary" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.maps_url!)} />
+                )}
+                {venueDetails?.website_url && (
+                  <HButton label="Website" variant="ghost" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.website_url!)} />
+                )}
+              </View>
+            </View>
+          </Card>
+
+          {/* Countdown */}
+          {daysTo != null && daysTo > 0 && (
+            <View style={styles.countdownStrip}>
+              <Text style={styles.countdownText}>
+                {daysTo === 1 ? 'Tomorrow!' : `${daysTo} days to go`}
+              </Text>
+            </View>
+          )}
+
+          {/* Arrival time */}
+          <View style={styles.section}>
+            {plan.arrival_time ? (
+              <View style={styles.arrivalRow}>
+                <Text style={styles.arrivalLabel}>Arrive by</Text>
+                <Text style={styles.arrivalTime}>
+                  {new Date(plan.arrival_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+                {isHost && <TouchableOpacity onPress={() => setSettingArrival(true)}><Text style={styles.editLink}>Edit</Text></TouchableOpacity>}
+              </View>
+            ) : isHost && !settingArrival ? (
+              <TouchableOpacity onPress={() => setSettingArrival(true)}>
+                <Text style={styles.setArrivalLink}>+ Set arrival time</Text>
+              </TouchableOpacity>
+            ) : null}
+            {settingArrival && (
+              <View style={styles.arrivalInputRow}>
+                <TextInput style={styles.arrivalInput} value={arrivalInput} onChangeText={setArrivalInput} placeholder="HH:MM" keyboardType="numbers-and-punctuation" autoFocus />
+                <HButton label="Save" variant="primary" size="sm" onPress={saveArrivalTime} />
+                <TouchableOpacity onPress={() => setSettingArrival(false)}><Text style={styles.editLink}>Cancel</Text></TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Who's in */}
+          <View style={styles.section}>
+            <Label>Who's in</Label>
+            <View style={styles.crewRow}>
+              {members.map((m, i) => (
+                <View key={m.id} style={{ alignItems: 'center', gap: 4 }}>
+                  <Avatar name={m.users?.display_name ?? '?'} index={i} size={42} />
+                  <Text style={styles.memberLabel}>{m.role === 'host' ? 'Host' : 'In'}</Text>
+                </View>
+              ))}
+              <TouchableOpacity style={[styles.addCircle, { width: 42, height: 42, borderRadius: 21 }]} onPress={() => router.push(`/plan/${id}/invite`)}>
+                <Feather name="plus" size={17} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.actionRow}>
+            <HButton label="Chat" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
+            <HButton label="Share ETA" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/eta`)} />
+          </View>
+
+          {isHost && (
+            <HButton label="Start plan — happening now" variant="primary" size="lg" fullWidth onPress={activatePlan} />
+          )}
+        </ScrollView>
       </SafeAreaView>
     );
   }
 
-  const arrived = members.filter(m => m.departure_status === 'arrived');
-  const onTheWay = members.filter(m => m.departure_status === 'leaving');
-  const notLeft = members.filter(m => m.departure_status === 'not_left');
+  // ── LIVE state ────────────────────────────────────────────────────────────
+  if (plan.state === 'active') {
+    const arrived   = members.filter(m => m.departure_status === 'arrived');
+    const onTheWay  = members.filter(m => m.departure_status === 'leaving');
+    const notLeft   = members.filter(m => m.departure_status === 'not_left');
+    const myStatus  = myMember?.departure_status;
 
+    const hasLocations = false; // would need real lat/lng from location_points; map shown without markers as placeholder
+    const venueLat = venueDetails?.lat;
+    const venueLng = venueDetails?.lng;
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <NavHead onBack={() => router.back()} title={plan.title} right={
+            <View style={styles.headerRight}>
+              <StatePill state={plan.state} />
+              {overflowMenu}
+            </View>
+          } />
+          {plan.selected_place_name && (
+            <Text style={styles.metaText}>{plan.selected_place_name}{plan.arrival_time ? ` · arrive by ${new Date(plan.arrival_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}</Text>
+          )}
+        </View>
+        <ScrollView contentContainerStyle={styles.body}>
+          {/* Map */}
+          {venueLat != null && venueLng != null && (
+            <MapView
+              style={styles.mapCard}
+              initialRegion={{ latitude: venueLat, longitude: venueLng, latitudeDelta: 0.03, longitudeDelta: 0.03 }}
+            >
+              <Marker coordinate={{ latitude: venueLat, longitude: venueLng }} title={plan.selected_place_name ?? 'Destination'} pinColor={COLORS.primary} />
+            </MapView>
+          )}
+
+          {/* Status rows */}
+          {[
+            { label: 'Arrived',    list: arrived,  bg: COLORS.successTint, fg: COLORS.successDeep },
+            { label: 'On the way', list: onTheWay, bg: COLORS.warningTint, fg: COLORS.warningDeep },
+            { label: 'Not left',   list: notLeft,  bg: COLORS.border,      fg: COLORS.textSecondary },
+          ].map(({ label, list, bg, fg }) => list.length > 0 && (
+            <View key={label} style={[styles.statusRow, { shadowColor: '#000', ...SHADOWS.card }]}>
+              <View style={[styles.statusPill, { backgroundColor: bg }]}>
+                <Text style={[styles.statusPillText, { color: fg }]}>{label}</Text>
+              </View>
+              <AvatarRow names={list.map(m => m.users?.display_name ?? '?')} size={26} />
+            </View>
+          ))}
+
+          {/* Chat peek */}
+          {lastMessage && (
+            <TouchableOpacity style={styles.chatPeek} onPress={() => router.push(`/plan/${id}/chat`)}>
+              <Avatar name={lastMessage.name} size={26} index={0} />
+              <Text style={styles.chatPeekText} numberOfLines={1}>
+                <Text style={{ fontFamily: FONTS.semibold }}>{lastMessage.name}: </Text>
+                {lastMessage.body}
+              </Text>
+              <Feather name="chevron-right" size={16} color={COLORS.textFaint} />
+            </TouchableOpacity>
+          )}
+
+          {/* Departure action */}
+          <View style={styles.departureSection}>
+            {myStatus !== 'arrived' ? (
+              <HButton
+                label={myStatus === 'not_left' ? "I'm leaving" : "I've arrived"}
+                variant="primary"
+                size="lg"
+                fullWidth
+                onPress={() => updateDepartureStatus(myStatus === 'not_left' ? 'leaving' : 'arrived')}
+              />
+            ) : (
+              <View style={styles.arrivedBanner}>
+                <Feather name="check" size={18} color={COLORS.successDeep} />
+                <Text style={styles.arrivedText}>You're here</Text>
+              </View>
+            )}
+            <Text style={styles.footerHint}>
+              {myStatus === 'not_left' ? 'Tap when you leave — your crew will know.' : "Flips to "I've arrived" once you're moving."}
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── DONE / CANCELLED state ────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.back}>{'<-'}</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={1}>{plan.title}</Text>
-          {plan.scheduled_for && (
-            <Text style={styles.time}>
-              {new Date(plan.scheduled_for).toLocaleString('en-US', {
-                weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-              })}
-            </Text>
-          )}
-        </View>
-        <View style={[styles.stateBadge, stateBadgeBg(plan.state)]}>
-          <Text style={[styles.stateBadgeText, stateBadgeFg(plan.state)]}>{stateLabel(plan.state)}</Text>
-        </View>
+        <NavHead onBack={() => router.back()} title={plan.title} right={<StatePill state={plan.state} />} />
       </View>
-
-      <ScrollView contentContainerStyle={styles.body}>
-
-        {/* Venue */}
-        <View style={styles.section}>
-          {hasVenue ? (
-            <>
-              <Text style={styles.sectionLabel}>Destination</Text>
-              <Text style={styles.venueName}>{plan.selected_place_name}</Text>
-            </>
-          ) : !isTerminal ? (
-            <TouchableOpacity style={styles.venueBtn} onPress={() => router.push(`/plan/${id}/venues`)}>
-              <Text style={styles.venueBtnText}>Browse & vote on venues</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {/* Arrival time */}
-          {!isTerminal && (
-            <View style={styles.arrivalBlock}>
-              {plan.arrival_time ? (
-                <View style={styles.arrivalRow}>
-                  <Text style={styles.arrivalLabel}>Be there by</Text>
-                  <Text style={styles.arrivalTime}>
-                    {new Date(plan.arrival_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </Text>
-                  {isHost && (
-                    <TouchableOpacity onPress={() => { setSettingArrival(true); setArrivalInput(''); }}>
-                      <Text style={styles.editLink}>Edit</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ) : isHost && !settingArrival ? (
-                <TouchableOpacity onPress={() => setSettingArrival(true)}>
-                  <Text style={styles.setArrivalLink}>+ Set arrival time</Text>
-                </TouchableOpacity>
-              ) : null}
-              {settingArrival && (
-                <View style={styles.arrivalInputRow}>
-                  <TextInput
-                    style={styles.arrivalInput}
-                    value={arrivalInput}
-                    onChangeText={setArrivalInput}
-                    placeholder="HH:MM"
-                    keyboardType="numbers-and-punctuation"
-                    autoFocus
-                  />
-                  <TouchableOpacity style={styles.arrivalSaveBtn} onPress={saveArrivalTime}>
-                    <Text style={styles.arrivalSaveBtnText}>Save</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setSettingArrival(false)}>
-                    <Text style={styles.editLink}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
+      <ScrollView contentContainerStyle={[styles.body, { alignItems: 'center' }]}>
+        <View style={{ flex: 1 }} />
+        <View style={{ alignItems: 'center', gap: 6 }}>
+          <Text style={styles.recapHeadline}>
+            {plan.state === 'completed' ? 'That was fun.' : 'Plan cancelled.'}
+          </Text>
+          <Text style={styles.recapMeta}>
+            {plan.title}{plan.selected_place_name ? ` · ${plan.selected_place_name}` : ''}
+          </Text>
         </View>
 
-        {/* Departure status panel — only when active */}
-        {isActive && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Where is everyone</Text>
-
-            {/* My action */}
-            {myMember && myMember.departure_status !== 'arrived' && (
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={() => updateDepartureStatus(
-                  myMember.departure_status === 'not_left' ? 'leaving' : 'arrived'
-                )}
-              >
-                <Text style={styles.primaryBtnText}>
-                  {myMember.departure_status === 'not_left' ? "I'm leaving" : "I've arrived"}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {myMember?.departure_status === 'arrived' && (
-              <Text style={styles.arrivedSelf}>You're here ✓</Text>
-            )}
-
-            {arrived.length > 0 && (
-              <View style={styles.departureGroup}>
-                <Text style={[styles.departureGroupLabel, { color: COLORS.arriving }]}>Arrived</Text>
-                {arrived.map(m => <MemberStatusRow key={m.id} member={m} color={COLORS.arriving} />)}
-              </View>
-            )}
-            {onTheWay.length > 0 && (
-              <View style={styles.departureGroup}>
-                <Text style={[styles.departureGroupLabel, { color: COLORS.onTheWay }]}>On the way</Text>
-                {onTheWay.map(m => <MemberStatusRow key={m.id} member={m} color={COLORS.onTheWay} />)}
-              </View>
-            )}
-            {notLeft.length > 0 && (
-              <View style={styles.departureGroup}>
-                <Text style={[styles.departureGroupLabel, { color: COLORS.notSharing }]}>Not left yet</Text>
-                {notLeft.map(m => <MemberStatusRow key={m.id} member={m} color={COLORS.notSharing} />)}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Members */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>{members.length} {members.length === 1 ? 'person' : 'people'}</Text>
-          {members.map((m) => (
-            <View key={m.id} style={styles.memberRow}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{m.users?.display_name?.[0]?.toUpperCase() ?? '?'}</Text>
-              </View>
-              <View>
-                <Text style={styles.memberName}>{m.users?.display_name ?? 'Unknown'}</Text>
-                <Text style={styles.memberRole}>{m.role === 'host' ? 'Host' : 'Member'}</Text>
-              </View>
+        <Card style={{ width: '100%' }}>
+          <View style={{ gap: SPACING.md }}>
+            <View style={styles.crewRow}>
+              <AvatarRow names={members.map(m => m.users?.display_name ?? '?')} size={30} />
+              <Text style={styles.madeItText}>{members.length} attended</Text>
             </View>
-          ))}
-        </View>
-
-        {/* Actions */}
-        {!isTerminal && (
-          <View style={styles.actions}>
-            {isHost && (
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push(`/plan/${id}/edit`)}>
-                <Text style={styles.secondaryBtnText}>Edit plan</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.secondaryBtn} onPress={shareInviteLink}>
-              <Text style={styles.secondaryBtnText}>Invite friends</Text>
-            </TouchableOpacity>
-            {!hasVenue && (
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push(`/plan/${id}/venues`)}>
-                <Text style={styles.secondaryBtnText}>Pick a venue</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push(`/plan/${id}/chat`)}>
-              <Text style={styles.secondaryBtnText}>Group chat</Text>
-            </TouchableOpacity>
-            {canShareEta && (
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push(`/plan/${id}/eta`)}>
-                <Text style={styles.primaryBtnText}>Share ETA & see who's close</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Host state-transition buttons */}
-            {isHost && plan.state === 'venue_locked' && (
-              <TouchableOpacity style={styles.startBtn} onPress={activatePlan}>
-                <Text style={styles.startBtnText}>Start plan — happening now</Text>
-              </TouchableOpacity>
-            )}
-            {isHost && isActive && (
-              <TouchableOpacity style={styles.dangerOutlineBtn} onPress={endPlan}>
-                <Text style={styles.dangerOutlineBtnText}>End plan</Text>
-              </TouchableOpacity>
-            )}
-            {isHost && (
-              <TouchableOpacity onPress={cancelPlan} style={styles.cancelLink}>
-                <Text style={styles.cancelLinkText}>Cancel plan</Text>
-              </TouchableOpacity>
-            )}
+            <View style={styles.addPicsArea}>
+              <Feather name="image" size={20} color={COLORS.textFaint} />
+              <Text style={styles.addPicsText}>Add pics from the night</Text>
+            </View>
           </View>
-        )}
+        </Card>
 
-        {isTerminal && (
-          <View style={styles.terminalBanner}>
-            <Text style={styles.terminalText}>
-              {plan.state === 'completed' ? 'This hangout has ended.' : 'This hangout was cancelled.'}
-            </Text>
-          </View>
+        {plan.state === 'completed' && (
+          <HButton label="Plan another with this crew" variant="primary" size="lg" fullWidth onPress={() => router.push('/plan/create')} />
         )}
+        <HButton label="View chat" variant="ghost" size="md" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
+        <View style={{ flex: 1 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function MemberStatusRow({ member, color }: { member: MemberWithUser; color: string }) {
-  return (
-    <View style={styles.memberRow}>
-      <View style={[styles.avatar, { backgroundColor: `${color}22` }]}>
-        <Text style={[styles.avatarText, { color }]}>
-          {member.users?.display_name?.[0]?.toUpperCase() ?? '?'}
-        </Text>
-      </View>
-      <Text style={styles.memberName}>{member.users?.display_name ?? 'Unknown'}</Text>
-    </View>
-  );
-}
-
-function stateLabel(s: string) {
-  return ({ open: 'Planning', venue_locked: 'Destination set', active: 'Happening now', completed: 'Done', cancelled: 'Cancelled' } as Record<string, string>)[s] ?? s;
-}
-function stateBadgeBg(s: string) {
-  if (s === 'active') return { backgroundColor: '#DCFCE7' };
-  if (s === 'venue_locked') return { backgroundColor: COLORS.primaryLight };
-  if (s === 'completed') return { backgroundColor: COLORS.background };
-  if (s === 'cancelled') return { backgroundColor: '#FEE2E2' };
-  return { backgroundColor: COLORS.background };
-}
-function stateBadgeFg(s: string) {
-  if (s === 'active') return { color: COLORS.arriving };
-  if (s === 'venue_locked') return { color: COLORS.primary };
-  if (s === 'cancelled') return { color: COLORS.error };
-  return { color: COLORS.textSecondary };
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
     backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    gap: SPACING.xs,
   },
-  back: { fontSize: FONT_SIZE.xl, color: COLORS.primary },
-  title: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.text },
-  time: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
-  stateBadge: { paddingHorizontal: SPACING.sm, paddingVertical: 4, borderRadius: 8 },
-  stateBadgeText: { fontSize: FONT_SIZE.xs, fontWeight: '700' },
-  body: { padding: SPACING.lg, gap: SPACING.lg },
-  section: { backgroundColor: COLORS.surface, borderRadius: 16, padding: SPACING.md, gap: SPACING.sm },
-  sectionLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  venueName: { fontSize: FONT_SIZE.xl, fontWeight: '600', color: COLORS.text },
-  venueBtn: { paddingVertical: SPACING.sm, alignItems: 'center' },
-  venueBtnText: { fontSize: FONT_SIZE.md, color: COLORS.primary, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingLeft: 46 },
+  metaText: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
 
-  arrivalBlock: { marginTop: SPACING.xs },
+  body: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xxl },
+
+  // Planning
+  votingCard: {
+    backgroundColor: COLORS.primaryFaint,
+    borderWidth: 1.5,
+    borderColor: '#DDD8FA',
+    borderRadius: RADIUS.card,
+    padding: 18,
+    gap: SPACING.sm,
+  },
+  votingTitle: { fontSize: FONT_SIZE.xl, fontFamily: FONTS.extrabold, color: COLORS.text, includeFontPadding: false },
+  votingSub: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+
+  section: { backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: SPACING.md, gap: SPACING.sm, ...SHADOWS.card },
+  crewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, alignItems: 'center' },
+  addCircle: {
+    width: 38, height: 38, borderRadius: 19,
+    borderWidth: 1.5, borderColor: COLORS.textFaint,
+    borderStyle: 'dashed',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberLabel: { fontSize: 11.5, fontFamily: FONTS.semibold, color: COLORS.textSecondary, includeFontPadding: false },
+
+  divider: { height: 1, backgroundColor: COLORS.border },
+  actionRow: { flexDirection: 'row', gap: SPACING.sm },
+
+  footerHint: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textFaint,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+
+  // Locked
+  venuePhoto: { width: '100%', height: 165 },
+  venueTitleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  venueCardName: { flex: 1, fontSize: 23, fontFamily: FONTS.extrabold, color: COLORS.text, includeFontPadding: false },
+  etaChip: { backgroundColor: COLORS.background, borderRadius: RADIUS.chip, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
+  etaChipText: { fontSize: FONT_SIZE.xs, fontFamily: FONTS.medium, color: COLORS.text, includeFontPadding: false },
+  venueAddress: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+
+  countdownStrip: {
+    backgroundColor: COLORS.primaryFaint,
+    borderRadius: RADIUS.card,
+    padding: 12,
+    alignItems: 'center',
+  },
+  countdownText: { fontSize: FONT_SIZE.lg, fontFamily: FONTS.bold, color: COLORS.primary, includeFontPadding: false },
+
   arrivalRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  arrivalLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
-  arrivalTime: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text, flex: 1 },
-  editLink: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontWeight: '600' },
-  setArrivalLink: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontWeight: '600' },
+  arrivalLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+  arrivalTime: { flex: 1, fontSize: FONT_SIZE.xl, fontFamily: FONTS.bold, color: COLORS.text, includeFontPadding: false },
+  editLink: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.primary, includeFontPadding: false },
+  setArrivalLink: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.primary, includeFontPadding: false },
   arrivalInputRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   arrivalInput: {
     flex: 1,
     borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 10,
+    borderRadius: RADIUS.input,
     paddingHorizontal: SPACING.md,
     paddingVertical: 10,
     fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.regular,
     color: COLORS.text,
   },
-  arrivalSaveBtn: { backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: SPACING.md, paddingVertical: 10 },
-  arrivalSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: FONT_SIZE.sm },
 
-  departureGroup: { marginTop: SPACING.xs, gap: SPACING.xs },
-  departureGroupLabel: { fontSize: FONT_SIZE.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
-  arrivedSelf: { fontSize: FONT_SIZE.md, fontWeight: '700', color: COLORS.arriving, textAlign: 'center', paddingVertical: SPACING.sm },
+  // Live
+  mapCard: { width: '100%', height: 196, borderRadius: RADIUS.card, overflow: 'hidden' },
 
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingVertical: SPACING.xs },
-  avatar: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    padding: '10px 14px' as any,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: SPACING.sm,
   },
-  avatarText: { fontSize: FONT_SIZE.md, fontWeight: '700', color: COLORS.primary },
-  memberName: { fontSize: FONT_SIZE.md, fontWeight: '500', color: COLORS.text },
-  memberRole: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  statusPill: {
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 11,
+    paddingVertical: 3,
+    width: 96,
+    alignItems: 'center',
+  },
+  statusPillText: { fontSize: 12, fontFamily: FONTS.bold, includeFontPadding: false },
 
-  actions: { gap: SPACING.sm },
-  primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontSize: FONT_SIZE.md, fontWeight: '700' },
-  secondaryBtn: {
-    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center', backgroundColor: COLORS.surface,
+  chatPeek: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    padding: 14,
+    ...SHADOWS.card,
   },
-  secondaryBtnText: { fontSize: FONT_SIZE.md, fontWeight: '600', color: COLORS.text },
-  startBtn: { backgroundColor: COLORS.arriving, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  startBtnText: { color: '#fff', fontSize: FONT_SIZE.md, fontWeight: '700' },
-  dangerOutlineBtn: {
-    borderWidth: 1.5, borderColor: COLORS.error, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
-  },
-  dangerOutlineBtnText: { fontSize: FONT_SIZE.md, fontWeight: '600', color: COLORS.error },
-  cancelLink: { alignItems: 'center', paddingVertical: SPACING.sm },
-  cancelLinkText: { fontSize: FONT_SIZE.sm, color: COLORS.error, fontWeight: '600' },
+  chatPeekText: { flex: 1, fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.text, includeFontPadding: false },
 
-  terminalBanner: {
-    backgroundColor: COLORS.surface, borderRadius: 16, padding: SPACING.lg, alignItems: 'center',
+  departureSection: { gap: SPACING.sm, marginTop: SPACING.sm },
+  arrivedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    backgroundColor: COLORS.successTint,
+    borderRadius: RADIUS.button,
   },
-  terminalText: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, textAlign: 'center' },
+  arrivedText: { fontSize: FONT_SIZE.lg, fontFamily: FONTS.bold, color: COLORS.successDeep, includeFontPadding: false },
+
+  // Done
+  recapHeadline: {
+    fontSize: 32,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.text,
+    letterSpacing: -0.6,
+    transform: [{ rotate: '-1.5deg' }],
+    includeFontPadding: false,
+  },
+  recapMeta: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+  madeItText: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.textSecondary, marginLeft: 8, includeFontPadding: false },
+  addPicsArea: {
+    borderWidth: 1.5,
+    borderColor: COLORS.textFaint,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.card,
+    height: 130,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  addPicsText: { fontSize: 13.5, fontFamily: FONTS.semibold, color: COLORS.textSecondary, includeFontPadding: false },
 });

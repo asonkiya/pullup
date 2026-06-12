@@ -12,149 +12,123 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
+import { NavHead, VibeChip, HButton } from '@/components/ui';
 
 const VIBES = ['Food', 'Drinks', 'Party', 'Movie', 'Coffee', 'Gaming', 'Active'];
 
 export default function EditPlanScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [title, setTitle] = useState('');
-  const [vibe, setVibe] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [title, setTitle]   = useState('');
+  const [vibe, setVibe]     = useState('');
+  const [date, setDate]     = useState<Date | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { data: plan } = await supabase
-        .from('plans')
-        .select('title, vibe, scheduled_for')
-        .eq('id', id!)
-        .single();
+      const { data: plan } = await supabase.from('plans').select('title, vibe, scheduled_for').eq('id', id!).single();
       if (plan) {
         setTitle(plan.title);
         setVibe(plan.vibe ?? '');
-        if (plan.scheduled_for) {
-          const d = new Date(plan.scheduled_for);
-          setDate(d.toISOString().slice(0, 10));
-          setTime(d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }));
-        }
+        if (plan.scheduled_for) setDate(new Date(plan.scheduled_for));
       }
       setLoading(false);
     })();
   }, [id]);
 
   async function save() {
-    if (!title.trim()) {
-      Alert.alert('Plan needs a name');
-      return;
-    }
+    if (!title.trim()) { Alert.alert('Plan needs a name'); return; }
     setSaving(true);
-
-    let scheduledFor: string | null = null;
-    if (date && time) {
-      const parsed = new Date(`${date}T${time}`);
-      if (isNaN(parsed.getTime())) {
-        Alert.alert('Invalid date/time', 'Use YYYY-MM-DD and HH:MM formats.');
-        setSaving(false);
-        return;
-      }
-      scheduledFor = parsed.toISOString();
-    }
-
-    const { error } = await supabase
-      .from('plans')
-      .update({
-        title: title.trim(),
-        vibe: vibe || null,
-        scheduled_for: scheduledFor,
-      })
-      .eq('id', id!);
-
+    const { error } = await supabase.from('plans').update({
+      title: title.trim(),
+      vibe: vibe || null,
+      scheduled_for: date?.toISOString() ?? null,
+    }).eq('id', id!);
     setSaving(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
+    if (error) { Alert.alert('Error', error.message); return; }
     router.back();
   }
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
-      </SafeAreaView>
-    );
-  }
+  if (loading) return <SafeAreaView style={styles.container}><ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} /></SafeAreaView>;
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit plan</Text>
-          <TouchableOpacity onPress={save} disabled={saving || !title.trim()}>
-            <Text style={[styles.saveText, (!title.trim() || saving) && styles.saveDisabled]}>
-              {saving ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-          <Text style={styles.fieldLabel}>What are you doing?</Text>
-          <TextInput
-            style={styles.titleInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Dinner, pre-game, coffee run..."
-            placeholderTextColor={COLORS.textSecondary}
-            maxLength={80}
-            autoFocus
-          />
-          <Text style={styles.fieldLabel}>Vibe</Text>
-          <View style={styles.vibes}>
-            {VIBES.map((v) => (
-              <TouchableOpacity
-                key={v}
-                style={[styles.chip, vibe === v && styles.chipSelected]}
-                onPress={() => setVibe(vibe === v ? '' : v)}
-              >
-                <Text style={[styles.chipText, vibe === v && styles.chipTextSelected]}>{v}</Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
+          <NavHead
+            onClose={() => router.back()}
+            title="Edit plan"
+            right={
+              <TouchableOpacity onPress={save} disabled={saving || !title.trim()}>
+                <Text style={[styles.saveLink, (!title.trim() || saving) && { opacity: 0.4 }]}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Text>
               </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.fieldLabel}>When? (optional)</Text>
-          <View style={styles.row}>
+            }
+          />
+
+          {/* Title */}
+          <View style={styles.titleWrap}>
             <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={COLORS.textSecondary}
-              keyboardType="numbers-and-punctuation"
-            />
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={time}
-              onChangeText={setTime}
-              placeholder="HH:MM"
-              placeholderTextColor={COLORS.textSecondary}
-              keyboardType="numbers-and-punctuation"
+              style={styles.titleInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Dinner, pre-game, coffee run…"
+              placeholderTextColor={COLORS.textFaint}
+              maxLength={80}
+              autoFocus
             />
           </View>
-          {(date || time) && (
-            <TouchableOpacity onPress={() => { setDate(''); setTime(''); }}>
-              <Text style={styles.clearDate}>Clear date & time</Text>
+
+          {/* Vibe */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>VIBE</Text>
+            <View style={styles.chips}>
+              {VIBES.map((v) => (
+                <VibeChip key={v} vibe={v} selected={vibe === v} onPress={() => setVibe(vibe === v ? '' : v)} />
+              ))}
+            </View>
+          </View>
+
+          {/* When */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>WHEN</Text>
+            <TouchableOpacity
+              style={styles.dateBtn}
+              onPress={() => setShowPicker(true)}
+            >
+              <Feather name="calendar" size={16} color={COLORS.primary} />
+              <Text style={styles.dateBtnText}>
+                {date
+                  ? date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                  : 'Pick a date & time'}
+              </Text>
             </TouchableOpacity>
-          )}
+            {date && (
+              <TouchableOpacity onPress={() => setDate(null)}>
+                <Text style={styles.clearLink}>Clear date & time</Text>
+              </TouchableOpacity>
+            )}
+            {showPicker && (
+              <DateTimePicker
+                value={date ?? new Date()}
+                mode="datetime"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(_, d) => {
+                  if (d) setDate(d);
+                  if (Platform.OS !== 'ios') setShowPicker(false);
+                }}
+                minimumDate={new Date()}
+              />
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -163,55 +137,36 @@ export default function EditPlanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.surface },
-  header: {
+  inner: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxl },
+
+  saveLink: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
+    includeFontPadding: false,
+  },
+
+  titleWrap: { borderBottomWidth: 2.5, borderBottomColor: COLORS.primary, paddingBottom: 10 },
+  titleInput: { fontSize: 26, fontFamily: FONTS.bold, color: COLORS.text, includeFontPadding: false },
+
+  fieldGroup: { gap: SPACING.sm },
+  fieldLabel: {
+    fontSize: 12, fontFamily: FONTS.bold, color: COLORS.textFaint,
+    letterSpacing: 1.1, includeFontPadding: false,
+  },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+
+  dateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  cancel: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  headerTitle: { fontSize: FONT_SIZE.md, fontWeight: '600', color: COLORS.text },
-  saveText: { fontSize: FONT_SIZE.md, fontWeight: '700', color: COLORS.primary },
-  saveDisabled: { opacity: 0.4 },
-  form: { padding: SPACING.lg, gap: SPACING.sm },
-  fieldLabel: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.text, marginTop: SPACING.md },
-  titleInput: {
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '600',
-    color: COLORS.text,
-    borderBottomWidth: 1.5,
-    borderBottomColor: COLORS.border,
-    paddingVertical: SPACING.sm,
-  },
-  input: {
+    gap: SPACING.sm,
     borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 12,
+    borderColor: COLORS.primaryLight,
+    backgroundColor: COLORS.primaryFaint,
+    borderRadius: RADIUS.input,
     paddingHorizontal: SPACING.md,
     paddingVertical: 12,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.text,
   },
-  row: { flexDirection: 'row', gap: SPACING.sm },
-  vibes: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
-  chip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.background,
-  },
-  chipSelected: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  chipText: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary, fontWeight: '500' },
-  chipTextSelected: { color: COLORS.primary, fontWeight: '600' },
-  clearDate: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.error,
-    fontWeight: '600',
-    marginTop: SPACING.xs,
-  },
+  dateBtnText: { fontSize: FONT_SIZE.md, fontFamily: FONTS.medium, color: COLORS.primary, includeFontPadding: false },
+  clearLink: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.error, includeFontPadding: false },
 });

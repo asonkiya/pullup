@@ -3,42 +3,32 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
+import { NavHead, HButton } from '@/components/ui';
 
 export default function VerifyScreen() {
   const { phone } = useLocalSearchParams<{ phone: string }>();
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp]     = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   async function verifyOtp() {
     if (otp.length < 6) return;
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: phone ?? '',
-      token: otp,
-      type: 'sms',
-    });
+    const { error } = await supabase.auth.verifyOtp({ phone: phone ?? '', token: otp, type: 'sms' });
     setLoading(false);
-    if (error) {
-      Alert.alert('Invalid code', 'Please check the code and try again.');
-      return;
-    }
-    // If the user followed an invite link before logging in, complete the join now
+    if (error) { Alert.alert('Invalid code', 'Please check the code and try again.'); return; }
     const pendingToken = await SecureStore.getItemAsync('pending_join_token');
-    if (pendingToken) {
-      router.replace(`/join/${pendingToken}`);
-    }
-    // Otherwise useProtectedRoute in _layout.tsx redirects to /(tabs)
+    if (pendingToken) router.replace(`/join/${pendingToken}`);
   }
 
   async function resend() {
@@ -47,69 +37,55 @@ export default function VerifyScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.inner}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backText}>{'<-'} Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Enter the code</Text>
-        <Text style={styles.subtitle}>Sent to {phone}</Text>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView style={styles.inner} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <NavHead onBack={() => router.back()} />
+        <View style={styles.copy}>
+          <Text style={styles.title}>Enter the code</Text>
+          <Text style={styles.sub}>Sent to {phone}</Text>
+        </View>
         <TextInput
-          style={styles.input}
+          style={styles.otpInput}
           value={otp}
           onChangeText={setOtp}
           placeholder="000000"
+          placeholderTextColor={COLORS.textFaint}
           keyboardType="number-pad"
           maxLength={6}
           autoFocus
         />
-        <TouchableOpacity
-          style={[styles.button, (loading || otp.length < 6) && styles.buttonDisabled]}
+        <HButton
+          label={loading ? 'Verifying…' : 'Verify'}
+          variant="primary"
+          size="lg"
           onPress={verifyOtp}
           disabled={loading || otp.length < 6}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? 'Verifying...' : 'Verify'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={resend} style={styles.resend}>
-          <Text style={styles.resendText}>Resend code</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          fullWidth
+        />
+        <HButton label="Resend code" variant="text" size="sm" onPress={resend} />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.surface },
-  inner: { flex: 1, paddingHorizontal: SPACING.xl, paddingTop: 60, gap: SPACING.md },
-  backText: { fontSize: FONT_SIZE.md, color: COLORS.primary, marginBottom: SPACING.lg },
-  title: { fontSize: FONT_SIZE.xxl, fontWeight: '700', color: COLORS.text },
-  subtitle: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  input: {
+  inner: { flex: 1, paddingHorizontal: SPACING.xl, paddingTop: SPACING.lg, gap: SPACING.md },
+  copy: { gap: SPACING.xs },
+  title: { fontSize: FONT_SIZE.xxl, fontFamily: FONTS.bold, color: COLORS.text, includeFontPadding: false },
+  sub:   { fontSize: FONT_SIZE.md, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+  otpInput: {
     borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.input,
     paddingHorizontal: SPACING.md,
     paddingVertical: 14,
     fontSize: 28,
-    fontWeight: '600',
+    fontFamily: FONTS.bold,
     color: COLORS.text,
     letterSpacing: 8,
     textAlign: 'center',
     marginTop: SPACING.sm,
+    includeFontPadding: false,
   },
-  button: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: '#fff', fontSize: FONT_SIZE.md, fontWeight: '600' },
-  resend: { alignItems: 'center', paddingVertical: SPACING.sm },
-  resendText: { color: COLORS.primary, fontSize: FONT_SIZE.sm },
 });

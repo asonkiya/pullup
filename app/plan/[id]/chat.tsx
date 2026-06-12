@@ -10,9 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
+import { NavHead } from '@/components/ui';
 import type { PlanMessageRow, UserRow } from '@/types/database';
 
 type MessageWithUser = PlanMessageRow & { users: UserRow };
@@ -20,12 +22,12 @@ type MessageWithUser = PlanMessageRow & { users: UserRow };
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [messages, setMessages] = useState<MessageWithUser[]>([]);
-  const [body, setBody] = useState('');
-  const [uid, setUid] = useState<string | null>(null);
+  const [body, setBody]     = useState('');
+  const [uid, setUid]       = useState<string | null>(null);
   const [myName, setMyName] = useState('Someone');
   const [planTitle, setPlanTitle] = useState('');
   const listRef = useRef<FlatList>(null);
-  const router = useRouter();
+  const router  = useRouter();
 
   useEffect(() => {
     (async () => {
@@ -39,36 +41,21 @@ export default function ChatScreen() {
       if (plan) setPlanTitle(plan.title);
     })();
     loadMessages();
-
     const channel = supabase
       .channel(`chat-${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'plan_messages', filter: `plan_id=eq.${id}` },
-        async (payload) => {
-          // Fetch the new message with user data
-          const { data } = await supabase
-            .from('plan_messages')
-            .select('*, users(*)')
-            .eq('id', payload.new.id)
-            .single();
-          if (data) {
-            setMessages((prev) => [...prev, data as unknown as MessageWithUser]);
-            setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-          }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'plan_messages', filter: `plan_id=eq.${id}` }, async (payload) => {
+        const { data } = await supabase.from('plan_messages').select('*, users(*)').eq('id', payload.new.id).single();
+        if (data) {
+          setMessages((prev) => [...prev, data as unknown as MessageWithUser]);
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
         }
-      )
+      })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [id]);
 
   async function loadMessages() {
-    const { data } = await supabase
-      .from('plan_messages')
-      .select('*, users(*)')
-      .eq('plan_id', id!)
-      .order('created_at', { ascending: true });
+    const { data } = await supabase.from('plan_messages').select('*, users(*)').eq('plan_id', id!).order('created_at', { ascending: true });
     setMessages((data ?? []) as unknown as MessageWithUser[]);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
   }
@@ -77,43 +64,25 @@ export default function ChatScreen() {
     const text = body.trim();
     if (!text || !uid) return;
     setBody('');
-    await supabase.from('plan_messages').insert({
-      plan_id: id!,
-      user_id: uid,
-      body: text,
-      message_type: 'text',
-    });
+    await supabase.from('plan_messages').insert({ plan_id: id!, user_id: uid, body: text, message_type: 'text' });
     supabase.functions.invoke('notify', {
-      body: {
-        event: 'chat_message',
-        plan_id: id,
-        actor_user_id: uid,
-        extra: { actor_name: myName, plan_title: planTitle, message_body: text },
-      },
+      body: { event: 'chat_message', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, message_body: text } },
     });
   }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.back}>{'<-'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Group chat</Text>
+        <NavHead onBack={() => router.back()} title="Group chat" />
       </View>
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
+            <View style={styles.empty}>
               <Text style={styles.emptyText}>No messages yet. Say hi!</Text>
             </View>
           }
@@ -121,9 +90,7 @@ export default function ChatScreen() {
             const isMe = item.user_id === uid;
             return (
               <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-                {!isMe && (
-                  <Text style={styles.senderName}>{item.users?.display_name ?? '?'}</Text>
-                )}
+                {!isMe && <Text style={styles.senderName}>{item.users?.display_name ?? '?'}</Text>}
                 <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.body}</Text>
                 <Text style={[styles.time, isMe && styles.timeMe]}>
                   {new Date(item.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
@@ -132,14 +99,13 @@ export default function ChatScreen() {
             );
           }}
         />
-
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             value={body}
             onChangeText={setBody}
             placeholder="Message…"
-            placeholderTextColor={COLORS.textSecondary}
+            placeholderTextColor={COLORS.textFaint}
             multiline
             maxLength={500}
             returnKeyType="send"
@@ -151,7 +117,7 @@ export default function ChatScreen() {
             onPress={send}
             disabled={!body.trim()}
           >
-            <Text style={styles.sendBtnText}>Send</Text>
+            <Feather name="send" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -162,35 +128,25 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
+    backgroundColor: COLORS.surface,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
-    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  back: { fontSize: FONT_SIZE.xl, color: COLORS.primary },
-  headerTitle: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.text },
   list: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-  emptyText: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  bubble: {
-    maxWidth: '80%',
-    borderRadius: 16,
-    padding: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.xs,
-    gap: 2,
-  },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  emptyText: { fontSize: FONT_SIZE.md, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
+
+  bubble: { maxWidth: '80%', borderRadius: 16, padding: SPACING.sm, paddingHorizontal: SPACING.md, marginBottom: SPACING.xs, gap: 2 },
   bubbleThem: { backgroundColor: COLORS.surface, alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  bubbleMe: { backgroundColor: COLORS.primary, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  senderName: { fontSize: FONT_SIZE.xs, fontWeight: '600', color: COLORS.primary, marginBottom: 2 },
-  bubbleText: { fontSize: FONT_SIZE.md, color: COLORS.text, lineHeight: 20 },
+  bubbleMe:   { backgroundColor: COLORS.primary, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
+  senderName: { fontSize: FONT_SIZE.xs, fontFamily: FONTS.semibold, color: COLORS.primary, marginBottom: 2, includeFontPadding: false },
+  bubbleText: { fontSize: FONT_SIZE.md, fontFamily: FONTS.regular, color: COLORS.text, lineHeight: 20, includeFontPadding: false },
   bubbleTextMe: { color: '#fff' },
-  time: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary, alignSelf: 'flex-end' },
-  timeMe: { color: 'rgba(255,255,255,0.7)' },
+  time: { fontSize: FONT_SIZE.xs, fontFamily: FONTS.regular, color: COLORS.textSecondary, alignSelf: 'flex-end', includeFontPadding: false },
+  timeMe: { color: 'rgba(255,255,255,0.65)' },
+
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -208,10 +164,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.regular,
     color: COLORS.text,
     maxHeight: 100,
   },
-  sendBtn: { backgroundColor: COLORS.primary, borderRadius: 20, paddingHorizontal: SPACING.md, paddingVertical: 10 },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sendBtnDisabled: { opacity: 0.4 },
-  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: FONT_SIZE.sm },
 });
