@@ -116,8 +116,16 @@ export default function PlanDetailScreen() {
   }
 
   async function activatePlan() {
-    await supabase.from('plans').update({ state: 'active' }).eq('id', id!);
+    const { data, error } = await supabase
+      .from('plans')
+      .update({ state: 'active' })
+      .eq('id', id!)
+      .select()
+      .single();
+    if (error) { Alert.alert('Could not start plan', error.message); return; }
+    if (!data) { Alert.alert('Could not start plan', 'You may not have permission. Only the plan creator can start it.'); return; }
     notifyMembers('plan_activated');
+    fetchAll();
   }
 
   async function reopenVoting() {
