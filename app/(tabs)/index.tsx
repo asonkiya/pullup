@@ -2,27 +2,53 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, SHADOWS } from '@/constants';
+import { Avatar, AvatarRow, Card, Label, StatePill, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
 
+type MemberPreview = { display_name: string };
+type PlanWithMembers = PlanRow & { members: MemberPreview[]; heroPhoto?: string };
+
 export default function HomeScreen() {
-  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [plans, setPlans] = useState<PlanWithMembers[]>([]);
+  const [myInitial, setMyInitial] = useState('?');
   const [loading, setLoading] = useState(true);
+  const [pastExpanded, setPastExpanded] = useState(false);
   const router = useRouter();
 
-  useFocusEffect(useCallback(() => {
-    fetchPlans();
-  }, []));
+  // Live ticker dot pulse
+  const dotScale = useSharedValue(1);
+  const dotStyle = useAnimatedStyle(() => ({ transform: [{ scale: dotScale.value }] }));
+  useEffect(() => {
+    dotScale.value = withRepeat(
+      withSequence(withTiming(1.3, { duration: 600 }), withTiming(1, { duration: 600 })),
+      -1,
+    );
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetchPlans(); }, []));
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setMyInitial((user.email?.[0] ?? 'Y').toUpperCase());
+    });
+
     const channel = supabase
       .channel('plans-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_members' }, () => fetchPlans())
@@ -34,175 +60,420 @@ export default function HomeScreen() {
   async function fetchPlans() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+
     const { data } = await supabase
       .from('plan_members')
       .select('plan_id, plans(*)')
       .eq('user_id', user.id)
       .order('joined_at', { ascending: false });
+
     const planList = (data ?? [])
       .map((row) => (row as Record<string, unknown>).plans as PlanRow)
       .filter(Boolean);
-    setPlans(planList);
+
+    // Enrich each plan with member names and venue photo
+    const enriched = await Promise.all(planList.map(async (plan) => {
+      const { data: members } = await supabase
+        .from('plan_members')
+        .select('users(display_name)')
+        .eq('plan_id', plan.id)
+        .limit(6);
+
+      const memberNames: MemberPreview[] = (members ?? []).map((m: any) => ({
+        display_name: m.users?.display_name ?? '?',
+      }));
+
+      let heroPhoto: string | undefined;
+      if (plan.selected_place_id) {
+        const { data: venue } = await supabase
+          .from('venue_candidates')
+          .select('photo_urls')
+          .eq('plan_id', plan.id)
+          .eq('google_place_id', plan.selected_place_id)
+          .single();
+        heroPhoto = (venue?.photo_urls as string[] | null)?.[0];
+      }
+
+      return { ...plan, members: memberNames, heroPhoto };
+    }));
+
+    setPlans(enriched);
     setLoading(false);
   }
 
-  const active = plans.filter((p) => p.state === 'active' || p.state === 'venue_locked');
-  const upcoming = plans.filter((p) => p.state === 'open');
-  const past = plans.filter((p) => p.state === 'completed' || p.state === 'cancelled');
+  const active   = plans.filter((p) => p.state === 'active');
+  const nextUp   = plans.find((p) => p.state === 'venue_locked' || p.state === 'open');
+  const upcoming = plans.filter((p) => p !== nextUp && (p.state === 'open' || p.state === 'venue_locked'));
+  const past     = plans.filter((p) => p.state === 'completed' || p.state === 'cancelled');
 
-  type ListItem =
-    | { type: 'section'; label: string }
-    | { type: 'plan'; plan: PlanRow }
-    | { type: 'empty' };
+  function formatCountdown(iso: string | null): string {
+    if (!iso) return '';
+    const ms = new Date(iso).getTime() - Date.now();
+    if (ms <= 0) return 'Now';
+    const h = Math.floor(ms / 3_600_000);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `in ${d}d`;
+    if (h > 0) return `in ${h}h`;
+    return 'Soon';
+  }
 
-  const items: ListItem[] = [
-    ...(active.length ? [{ type: 'section' as const, label: 'Active' }, ...active.map((p) => ({ type: 'plan' as const, plan: p }))] : []),
-    ...(upcoming.length ? [{ type: 'section' as const, label: 'Upcoming' }, ...upcoming.map((p) => ({ type: 'plan' as const, plan: p }))] : []),
-    ...(past.length ? [{ type: 'section' as const, label: 'Past' }, ...past.map((p) => ({ type: 'plan' as const, plan: p }))] : []),
-    ...(plans.length === 0 ? [{ type: 'empty' as const }] : []),
-  ];
+  function formatScheduled(iso: string | null): string {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.wordmark}>hangout</Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+          <Avatar name={myInitial} size={34} index={0} />
+        </TouchableOpacity>
       </View>
+
       {loading ? (
-        <ActivityIndicator style={styles.loader} color={COLORS.primary} />
+        <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} />
+      ) : plans.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No plans yet</Text>
+          <Text style={styles.emptySub}>Tap + below to create your first hangout</Text>
+        </View>
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item, i) =>
-            item.type === 'plan' ? item.plan.id : `${item.type}-${i}`
-          }
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            if (item.type === 'section') {
-              return <Text style={styles.sectionLabel}>{item.label}</Text>;
-            }
-            if (item.type === 'empty') {
-              return (
-                <View style={styles.empty}>
-                  <Text style={styles.emptyTitle}>No plans yet</Text>
-                  <Text style={styles.emptySub}>Tap + to create your first hangout</Text>
-                </View>
-              );
-            }
-            const p = item.plan;
-            return (
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+          {/* Live ticker */}
+          {active.map((plan) => (
+            <TouchableOpacity
+              key={plan.id}
+              style={styles.ticker}
+              onPress={() => router.push(`/plan/${plan.id}`)}
+              activeOpacity={0.85}
+            >
+              <Animated.View style={[styles.tickerDot, dotStyle]} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.tickerTitle} numberOfLines={1}>
+                  {plan.title}{plan.selected_place_name ? ` · ${plan.selected_place_name}` : ''}
+                </Text>
+                <Text style={styles.tickerSub}>Happening now</Text>
+              </View>
+              <AvatarRow names={plan.members.map((m) => m.display_name)} size={26} />
+            </TouchableOpacity>
+          ))}
+
+          {/* NEXT UP hero card */}
+          {nextUp && (
+            <>
+              <Label>Next up</Label>
               <TouchableOpacity
-                style={styles.card}
-                onPress={() => router.push(`/plan/${p.id}`)}
+                activeOpacity={0.9}
+                onPress={() => router.push(`/plan/${nextUp.id}`)}
               >
-                <Text style={styles.cardTitle}>{p.title}</Text>
-                {p.scheduled_for && (
-                  <Text style={styles.cardTime}>
-                    {new Date(p.scheduled_for).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                )}
-                <View style={styles.cardMeta}>
-                  <View style={[styles.badge, badgeBg(p.state)]}>
-                    <Text style={[styles.badgeText, badgeFg(p.state)]}>
-                      {stateLabel(p.state)}
-                    </Text>
-                  </View>
-                  {p.selected_place_name && (
-                    <Text style={styles.placeName}>{p.selected_place_name}</Text>
+                <Card pad={0} style={styles.heroCard}>
+                  {nextUp.heroPhoto ? (
+                    <Image
+                      source={{ uri: nextUp.heroPhoto }}
+                      style={styles.heroPhoto}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.heroPhoto, styles.heroPhotoPlaceholder]}>
+                      <Text style={styles.heroPlaceholderText}>{nextUp.title[0]}</Text>
+                    </View>
                   )}
-                </View>
+                  {nextUp.scheduled_for && (
+                    <View style={styles.countdownPill}>
+                      <Text style={styles.countdownText}>{formatCountdown(nextUp.scheduled_for)}</Text>
+                    </View>
+                  )}
+                  <View style={styles.heroBody}>
+                    <View style={styles.heroTitleRow}>
+                      <Text style={styles.heroTitle} numberOfLines={1}>{nextUp.title}</Text>
+                      {nextUp.vibe && <VibeChip vibe={nextUp.vibe} selected small />}
+                    </View>
+                    {nextUp.scheduled_for && (
+                      <Text style={styles.heroMeta}>{formatScheduled(nextUp.scheduled_for)}</Text>
+                    )}
+                    {nextUp.selected_place_name && (
+                      <Text style={styles.heroMeta}>{nextUp.selected_place_name}</Text>
+                    )}
+                    <View style={{ marginTop: 4 }}>
+                      <AvatarRow
+                        names={nextUp.members.map((m) => m.display_name)}
+                        size={28}
+                        extraText={`${nextUp.members.length} going`}
+                      />
+                    </View>
+                  </View>
+                </Card>
               </TouchableOpacity>
-            );
-          }}
-        />
+            </>
+          )}
+
+          {/* UPCOMING compact rows */}
+          {upcoming.length > 0 && (
+            <>
+              <Label>Upcoming</Label>
+              {upcoming.map((plan) => (
+                <TouchableOpacity
+                  key={plan.id}
+                  activeOpacity={0.85}
+                  onPress={() => router.push(`/plan/${plan.id}`)}
+                >
+                  <Card pad={14} style={styles.rowCard}>
+                    <View style={styles.rowLeft}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{plan.title}</Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {plan.scheduled_for ? formatScheduled(plan.scheduled_for) : 'Time TBD'}
+                        {plan.selected_place_name ? ` · ${plan.selected_place_name}` : ''}
+                      </Text>
+                    </View>
+                    <AvatarRow names={plan.members.map((m) => m.display_name)} size={24} />
+                    <StatePill state={plan.state} />
+                  </Card>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+
+          {/* Past plans (collapsible) */}
+          {past.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.pastToggle}
+                onPress={() => setPastExpanded((v) => !v)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pastLabel}>Past plans</Text>
+                <View style={styles.pastBadge}>
+                  <Text style={styles.pastBadgeText}>{past.length}</Text>
+                </View>
+                <View style={{ flex: 1 }} />
+                <Text style={styles.pastChevron}>{pastExpanded ? '∧' : '∨'}</Text>
+              </TouchableOpacity>
+
+              {pastExpanded && past.map((plan) => (
+                <TouchableOpacity
+                  key={plan.id}
+                  activeOpacity={0.85}
+                  onPress={() => router.push(`/plan/${plan.id}`)}
+                >
+                  <Card pad={14} style={styles.rowCard}>
+                    <View style={styles.rowLeft}>
+                      <Text style={[styles.rowTitle, { color: COLORS.textSecondary }]} numberOfLines={1}>
+                        {plan.title}
+                      </Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {plan.selected_place_name ?? 'No venue'}
+                      </Text>
+                    </View>
+                    <StatePill state={plan.state} />
+                  </Card>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
       )}
-      <TouchableOpacity style={styles.fab} onPress={() => router.push('/plan/create')}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
-function stateLabel(s: string) {
-  return (
-    { open: 'Planning', venue_locked: 'Destination set', active: 'Happening now', completed: 'Done', cancelled: 'Cancelled' }[s] ?? s
-  );
-}
-function badgeBg(s: string) {
-  if (s === 'active') return { backgroundColor: '#DCFCE7' };
-  if (s === 'venue_locked') return { backgroundColor: COLORS.primaryLight };
-  return { backgroundColor: COLORS.background };
-}
-function badgeFg(s: string) {
-  if (s === 'active') return { color: COLORS.success };
-  if (s === 'venue_locked') return { color: COLORS.primary };
-  return { color: COLORS.textSecondary };
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  wordmark: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.primary, letterSpacing: -0.5 },
-  loader: { marginTop: 60 },
-  list: { padding: SPACING.md, paddingBottom: 100 },
-  sectionLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginTop: SPACING.lg,
+  wordmark: {
+    fontSize: 26,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.primary,
+    letterSpacing: -0.5,
+    includeFontPadding: false,
+  },
+
+  scroll: {
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+
+  // Live ticker
+  ticker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.successTint,
+    borderWidth: 1.5,
+    borderColor: '#C8EDDD',
+    borderRadius: 18,
+    padding: 14,
     marginBottom: SPACING.xs,
-    marginLeft: SPACING.xs,
   },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
-    gap: SPACING.xs,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+  tickerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.success,
+    flexShrink: 0,
   },
-  cardTitle: { fontSize: FONT_SIZE.lg, fontWeight: '600', color: COLORS.text },
-  cardTime: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.xs },
-  badge: { paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: 6 },
-  badgeText: { fontSize: FONT_SIZE.xs, fontWeight: '600' },
-  placeName: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
-  empty: { alignItems: 'center', paddingTop: 80, gap: SPACING.sm },
-  emptyTitle: { fontSize: FONT_SIZE.xl, fontWeight: '600', color: COLORS.text },
-  emptySub: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  fab: {
-    position: 'absolute',
-    bottom: 32,
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
+  tickerTitle: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    includeFontPadding: false,
+  },
+  tickerSub: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.medium,
+    color: COLORS.successDeep,
+    includeFontPadding: false,
+  },
+
+  // Hero card
+  heroCard: {
+    overflow: 'hidden',
+    marginBottom: SPACING.xs,
+  },
+  heroPhoto: {
+    width: '100%',
+    height: 148,
+  },
+  heroPhotoPlaceholder: {
+    backgroundColor: COLORS.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  fabText: { fontSize: 28, color: '#fff', lineHeight: 32 },
+  heroPlaceholderText: {
+    fontSize: 56,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.primary,
+    opacity: 0.25,
+    includeFontPadding: false,
+  },
+  countdownPill: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  countdownText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
+    includeFontPadding: false,
+  },
+  heroBody: {
+    padding: 16,
+    gap: SPACING.xs,
+  },
+  heroTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  heroTitle: {
+    flex: 1,
+    fontSize: FONT_SIZE.xl,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    includeFontPadding: false,
+  },
+  heroMeta: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    includeFontPadding: false,
+  },
+
+  // Compact row card
+  rowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  rowLeft: {
+    flex: 1,
+    gap: 2,
+  },
+  rowTitle: {
+    fontSize: FONT_SIZE.lg - 1,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    includeFontPadding: false,
+  },
+  rowMeta: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    includeFontPadding: false,
+  },
+
+  // Past plans
+  pastToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: 4,
+    marginTop: SPACING.sm,
+  },
+  pastLabel: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
+    color: COLORS.textSecondary,
+    includeFontPadding: false,
+  },
+  pastBadge: {
+    backgroundColor: COLORS.border,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 1,
+  },
+  pastBadgeText: {
+    fontSize: 12,
+    fontFamily: FONTS.bold,
+    color: COLORS.textSecondary,
+    includeFontPadding: false,
+  },
+  pastChevron: {
+    fontSize: 12,
+    color: COLORS.textFaint,
+  },
+
+  // Empty state
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.xl,
+  },
+  emptyTitle: {
+    fontSize: FONT_SIZE.xl,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    includeFontPadding: false,
+  },
+  emptySub: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
 });
