@@ -6,38 +6,53 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  Alert,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { COLORS, SPACING, FONT_SIZE } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
+import { NavHead, VibeChip } from '@/components/ui';
 
 const VIBES = ['Food', 'Drinks', 'Party', 'Movie', 'Coffee', 'Gaming', 'Active'];
 
+type WhenChip = 'tonight' | 'tomorrow' | 'weekend' | 'exact' | null;
+
+function computeScheduled(when: WhenChip, exactDate: Date | null): string | null {
+  if (when === 'exact') return exactDate?.toISOString() ?? null;
+  const d = new Date();
+  if (when === 'tonight')   { d.setHours(20, 0, 0, 0); return d.toISOString(); }
+  if (when === 'tomorrow')  { d.setDate(d.getDate() + 1); d.setHours(19, 0, 0, 0); return d.toISOString(); }
+  if (when === 'weekend') {
+    const day = d.getDay();
+    const daysUntilSat = (6 - day + 7) % 7 || 7;
+    d.setDate(d.getDate() + daysUntilSat);
+    d.setHours(14, 0, 0, 0);
+    return d.toISOString();
+  }
+  return null;
+}
+
 export default function CreatePlanScreen() {
-  const [title, setTitle] = useState('');
-  const [vibe, setVibe] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [title, setTitle]       = useState('');
+  const [vibe, setVibe]         = useState('');
+  const [when, setWhen]         = useState<WhenChip>(null);
+  const [exactDate, setExactDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const router = useRouter();
 
   async function createPlan() {
-    if (!title.trim()) {
-      Alert.alert('Give your plan a name');
-      return;
-    }
+    if (!title.trim()) { Alert.alert('Give your plan a name'); return; }
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) { setLoading(false); return; }
 
-    let scheduledFor: string | null = null;
-    if (date && time) {
-      scheduledFor = new Date(`${date}T${time}`).toISOString();
-    }
+    const scheduledFor = computeScheduled(when, exactDate);
 
     const { data: plan, error } = await supabase
       .from('plans')
@@ -66,71 +81,118 @@ export default function CreatePlanScreen() {
     });
 
     setLoading(false);
-    router.replace(`/plan/${plan.id}`);
+    router.replace(`/plan/${plan.id}/invite`);
+  }
+
+  function whenLabel(): string {
+    if (when === 'tonight')  return 'Tonight · 8:00 PM';
+    if (when === 'tomorrow') return 'Tomorrow · 7:00 PM';
+    if (when === 'weekend')  return 'This weekend · 2:00 PM';
+    if (when === 'exact')    return exactDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return '';
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>New plan</Text>
-          <TouchableOpacity onPress={createPlan} disabled={loading || !title.trim()}>
-            <Text style={[styles.create, (!title.trim() || loading) && styles.createDisabled]}>
-              {loading ? 'Creating...' : 'Create'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-          <Text style={styles.fieldLabel}>What are you doing?</Text>
-          <TextInput
-            style={styles.titleInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Dinner, pre-game, coffee run..."
-            placeholderTextColor={COLORS.textSecondary}
-            maxLength={80}
-            autoFocus
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* Header */}
+          <NavHead
+            onClose={() => router.back()}
+            right={<Text style={styles.counter}>1 of 2</Text>}
           />
-          <Text style={styles.fieldLabel}>Vibe</Text>
-          <View style={styles.vibes}>
-            {VIBES.map((v) => (
+
+          {/* Hero copy */}
+          <View style={styles.heroText}>
+            <Text style={styles.display}>What's the move?</Text>
+            <Text style={styles.sub}>Name it anything — you can vote on the spot later.</Text>
+          </View>
+
+          {/* Title input */}
+          <View style={styles.titleWrap}>
+            <TextInput
+              style={styles.titleInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Dinner at that new spot…"
+              placeholderTextColor={COLORS.textFaint}
+              maxLength={80}
+              autoFocus
+            />
+          </View>
+
+          {/* Vibe chips */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>VIBE</Text>
+            <View style={styles.chips}>
+              {VIBES.map((v) => (
+                <VibeChip
+                  key={v}
+                  vibe={v}
+                  selected={vibe === v}
+                  onPress={() => setVibe(vibe === v ? '' : v)}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* When-ish chips */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>WHEN-ISH?</Text>
+            <View style={styles.chips}>
+              {(['tonight', 'tomorrow', 'weekend'] as const).map((w) => (
+                <TouchableOpacity
+                  key={w}
+                  style={[styles.whenChip, when === w && styles.whenChipOn]}
+                  onPress={() => { setWhen(when === w ? null : w); setShowDatePicker(false); }}
+                >
+                  <Text style={[styles.whenChipText, when === w && styles.whenChipTextOn]}>
+                    {w === 'tonight' ? 'Tonight' : w === 'tomorrow' ? 'Tomorrow' : 'This weekend'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
               <TouchableOpacity
-                key={v}
-                style={[styles.chip, vibe === v && styles.chipSelected]}
-                onPress={() => setVibe(vibe === v ? '' : v)}
+                style={[styles.whenChip, when === 'exact' && styles.whenChipOn]}
+                onPress={() => { setWhen('exact'); setShowDatePicker(true); }}
               >
-                <Text style={[styles.chipText, vibe === v && styles.chipTextSelected]}>{v}</Text>
+                <Feather name="calendar" size={15} color={when === 'exact' ? COLORS.primary : COLORS.textSecondary} strokeWidth={2} />
+                <Text style={[styles.whenChipText, when === 'exact' && styles.whenChipTextOn]}>Pick exact</Text>
               </TouchableOpacity>
-            ))}
+            </View>
+
+            {when && (
+              <Text style={styles.whenSummary}>{whenLabel()}</Text>
+            )}
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={exactDate}
+                mode="datetime"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(_, date) => {
+                  if (date) setExactDate(date);
+                  if (Platform.OS !== 'ios') setShowDatePicker(false);
+                }}
+                minimumDate={new Date()}
+                style={{ marginTop: SPACING.sm }}
+              />
+            )}
           </View>
-          <Text style={styles.fieldLabel}>When? (optional)</Text>
-          <View style={styles.row}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={COLORS.textSecondary}
-              keyboardType="numbers-and-punctuation"
-            />
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={time}
-              onChangeText={setTime}
-              placeholder="HH:MM"
-              placeholderTextColor={COLORS.textSecondary}
-              keyboardType="numbers-and-punctuation"
-            />
+
+          {/* Create button */}
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={[styles.createBtn, (!title.trim() || loading) && styles.createBtnDisabled]}
+              onPress={createPlan}
+              disabled={!title.trim() || loading}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.createBtnText}>{loading ? 'Creating…' : 'Create plan'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.footerHint}>Next: invite the crew</Text>
           </View>
-          <Text style={styles.hint}>
-            You'll add venues and invite friends after creating the plan.
-          </Text>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -139,56 +201,108 @@ export default function CreatePlanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.surface },
-  header: {
+  inner: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxl },
+
+  counter: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
+    color: COLORS.textFaint,
+    includeFontPadding: false,
+  },
+
+  heroText: { gap: 6 },
+  display: {
+    fontSize: 30,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.text,
+    letterSpacing: -0.5,
+    includeFontPadding: false,
+  },
+  sub: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    includeFontPadding: false,
+  },
+
+  titleWrap: {
+    borderBottomWidth: 2.5,
+    borderBottomColor: COLORS.primary,
+    paddingBottom: 10,
+  },
+  titleInput: {
+    fontSize: 26,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    includeFontPadding: false,
+  },
+
+  fieldGroup: { gap: SPACING.sm },
+  fieldLabel: {
+    fontSize: 12,
+    fontFamily: FONTS.bold,
+    color: COLORS.textFaint,
+    letterSpacing: 1.1,
+    includeFontPadding: false,
+  },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+
+  whenChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  cancel: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary },
-  headerTitle: { fontSize: FONT_SIZE.md, fontWeight: '600', color: COLORS.text },
-  create: { fontSize: FONT_SIZE.md, fontWeight: '700', color: COLORS.primary },
-  createDisabled: { opacity: 0.4 },
-  form: { padding: SPACING.lg, gap: SPACING.sm },
-  fieldLabel: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.text, marginTop: SPACING.md },
-  titleInput: {
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '600',
-    color: COLORS.text,
-    borderBottomWidth: 1.5,
-    borderBottomColor: COLORS.border,
-    paddingVertical: SPACING.sm,
-  },
-  input: {
+    gap: 6,
+    borderRadius: RADIUS.chip,
     borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 12,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  whenChipOn: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: '#D6D1FA',
+  },
+  whenChipText: {
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
-  },
-  row: { flexDirection: 'row', gap: SPACING.sm },
-  vibes: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
-  chip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.background,
-  },
-  chipSelected: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  chipText: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary, fontWeight: '500' },
-  chipTextSelected: { color: COLORS.primary, fontWeight: '600' },
-  hint: {
-    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
     color: COLORS.textSecondary,
-    marginTop: SPACING.xl,
+    includeFontPadding: false,
+  },
+  whenChipTextOn: { color: COLORS.primary },
+
+  whenSummary: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textFaint,
+    marginTop: -SPACING.xs,
+    includeFontPadding: false,
+  },
+
+  footer: { gap: SPACING.sm, marginTop: SPACING.md },
+  createBtn: {
+    height: 56,
+    borderRadius: RADIUS.button,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  createBtnDisabled: { opacity: 0.45 },
+  createBtnText: {
+    fontSize: FONT_SIZE.lg,
+    fontFamily: FONTS.bold,
+    color: '#fff',
+    includeFontPadding: false,
+  },
+  footerHint: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.textFaint,
     textAlign: 'center',
-    lineHeight: 20,
+    includeFontPadding: false,
   },
 });
