@@ -132,12 +132,14 @@ export default function PlanDetailScreen() {
     Alert.alert('Re-open voting?', 'The locked venue stays as a suggestion in the deck; the crew can swipe again or add more.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Re-open', onPress: async () => {
-        await supabase.from('plans').update({
+        const { error } = await supabase.from('plans').update({
           state: 'open',
           selected_place_id: null,
           selected_place_name: null,
         }).eq('id', id!);
+        if (error) { Alert.alert('Could not re-open voting', error.message); return; }
         notifyMembers('voting_reopened');
+        fetchAll();
       }},
     ]);
   }
@@ -168,15 +170,23 @@ export default function PlanDetailScreen() {
     if (!arrivalInput.match(/^\d{1,2}:\d{2}$/)) { Alert.alert('Enter time as HH:MM'); return; }
     const base = plan?.scheduled_for ? new Date(plan.scheduled_for).toDateString() : new Date().toDateString();
     const iso = new Date(`${base} ${arrivalInput}`).toISOString();
-    await supabase.from('plans').update({ arrival_time: iso }).eq('id', id!);
+    const { error } = await supabase.from('plans').update({ arrival_time: iso }).eq('id', id!);
+    if (error) { Alert.alert('Could not save arrival time', error.message); return; }
     setSettingArrival(false);
     setArrivalInput('');
+    fetchAll();
   }
 
   async function updateDepartureStatus(status: DepartureStatus) {
     if (!currentUserId) return;
-    await supabase.from('plan_members').update({ departure_status: status }).eq('plan_id', id!).eq('user_id', currentUserId);
+    const { error } = await supabase
+      .from('plan_members')
+      .update({ departure_status: status })
+      .eq('plan_id', id!)
+      .eq('user_id', currentUserId);
+    if (error) { Alert.alert('Could not update status', error.message); return; }
     notifyMembers(status === 'leaving' ? 'leaving' : 'arrived');
+    fetchAll();
   }
 
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
