@@ -8,11 +8,12 @@ import {
   Share,
   SafeAreaView,
   ActivityIndicator,
-  TextInput,
   Alert,
   Image,
   Linking,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -34,7 +35,7 @@ export default function PlanDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [settingArrival, setSettingArrival] = useState(false);
-  const [arrivalInput, setArrivalInput] = useState('');
+  const [arrivalDate, setArrivalDate] = useState<Date>(new Date());
   const router = useRouter();
 
   useEffect(() => {
@@ -216,19 +217,23 @@ export default function PlanDetailScreen() {
     ]);
   }
 
+  function openArrivalPicker() {
+    const seed = plan?.arrival_time
+      ? new Date(plan.arrival_time)
+      : plan?.scheduled_for
+      ? new Date(plan.scheduled_for)
+      : new Date();
+    setArrivalDate(isNaN(seed.getTime()) ? new Date() : seed);
+    setSettingArrival(true);
+  }
+
   async function saveArrivalTime() {
-    const m = arrivalInput.match(/^(\d{1,2}):(\d{2})$/);
-    if (!m) { Alert.alert('Enter time as HH:MM'); return; }
-    const hours = parseInt(m[1], 10);
-    const minutes = parseInt(m[2], 10);
-    if (hours > 23 || minutes > 59) { Alert.alert('Invalid time'); return; }
-    const base = plan?.scheduled_for ? new Date(plan.scheduled_for) : new Date();
-    if (isNaN(base.getTime())) { Alert.alert('Plan has no valid date'); return; }
-    base.setHours(hours, minutes, 0, 0);
-    const { error } = await supabase.from('plans').update({ arrival_time: base.toISOString() }).eq('id', id!);
+    const { error } = await supabase
+      .from('plans')
+      .update({ arrival_time: arrivalDate.toISOString() })
+      .eq('id', id!);
     if (error) { Alert.alert('Could not save arrival time', error.message); return; }
     setSettingArrival(false);
-    setArrivalInput('');
     fetchAll();
   }
 
@@ -414,20 +419,31 @@ export default function PlanDetailScreen() {
               <View style={styles.arrivalRow}>
                 <Text style={styles.arrivalLabel}>Arrive by</Text>
                 <Text style={styles.arrivalTime}>
-                  {new Date(plan.arrival_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  {new Date(plan.arrival_time).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </Text>
-                {isHost && <TouchableOpacity onPress={() => setSettingArrival(true)}><Text style={styles.editLink}>Edit</Text></TouchableOpacity>}
+                {isHost && <TouchableOpacity onPress={openArrivalPicker}><Text style={styles.editLink}>Edit</Text></TouchableOpacity>}
               </View>
             ) : isHost && !settingArrival ? (
-              <TouchableOpacity onPress={() => setSettingArrival(true)}>
+              <TouchableOpacity onPress={openArrivalPicker}>
                 <Text style={styles.setArrivalLink}>+ Set arrival time</Text>
               </TouchableOpacity>
             ) : null}
             {settingArrival && (
-              <View style={styles.arrivalInputRow}>
-                <TextInput style={styles.arrivalInput} value={arrivalInput} onChangeText={setArrivalInput} placeholder="HH:MM" keyboardType="numbers-and-punctuation" autoFocus />
-                <HButton label="Save" variant="primary" size="sm" onPress={saveArrivalTime} />
-                <TouchableOpacity onPress={() => setSettingArrival(false)}><Text style={styles.editLink}>Cancel</Text></TouchableOpacity>
+              <View style={{ gap: SPACING.sm }}>
+                <DateTimePicker
+                  value={arrivalDate}
+                  mode="datetime"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  onChange={(_, date) => {
+                    if (date) setArrivalDate(date);
+                    if (Platform.OS !== 'ios') setSettingArrival(false);
+                  }}
+                  minimumDate={new Date()}
+                />
+                <View style={styles.arrivalInputRow}>
+                  <HButton label="Save" variant="primary" size="sm" onPress={saveArrivalTime} />
+                  <TouchableOpacity onPress={() => setSettingArrival(false)}><Text style={styles.editLink}>Cancel</Text></TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
