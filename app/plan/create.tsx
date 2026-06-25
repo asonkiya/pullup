@@ -65,7 +65,7 @@ export default function CreatePlanScreen() {
         scheduled_for: scheduledFor,
         travel_mode_default: 'drive',
         vibe: vibe || null,
-        selected_place_id: place?.google_place_id ?? null,
+        selected_place_id: place?.place_id ?? null,
         selected_place_name: place?.name ?? null,
         anchor_lat: place?.lat ?? null,
         anchor_lng: place?.lng ?? null,
@@ -91,7 +91,8 @@ export default function CreatePlanScreen() {
         .from('venue_candidates')
         .insert({
           plan_id: plan.id,
-          google_place_id: place.google_place_id,
+          place_id: place.place_id,
+          provider: place.provider,
           name: place.name,
           lat: place.lat,
           lng: place.lng,

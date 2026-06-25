@@ -46,7 +46,8 @@ export default function SuggestScreen() {
       .from('venue_candidates')
       .insert({
         plan_id: id!,
-        google_place_id: place.google_place_id,
+        place_id: place.place_id,
+        provider: place.provider,
         name: place.name,
         lat: place.lat,
         lng: place.lng,

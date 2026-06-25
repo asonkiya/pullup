@@ -87,7 +87,7 @@ export default function HomeScreen() {
           .from('venue_candidates')
           .select('photo_urls')
           .eq('plan_id', plan.id)
-          .eq('google_place_id', plan.selected_place_id)
+          .eq('place_id', plan.selected_place_id)
           .single();
         heroPhoto = (venue?.photo_urls as string[] | null)?.[0];
       }

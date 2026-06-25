@@ -10,7 +10,7 @@ import {
   AppState,
   Dimensions,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import MapboxGL from '@rnmapbox/maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
@@ -21,6 +21,7 @@ import {
   LOCATION_UPDATE_INTERVAL_MS,
   LOCATION_DISTANCE_THRESHOLD_M,
   DEFAULT_SHARE_SESSION_HOURS,
+  VENUE_PROVIDER,
 } from '@/constants';
 import type { EtaSnapshotRow, UserRow } from '@/types/database';
 
@@ -49,7 +50,7 @@ export default function EtaDashboardScreen() {
   const [venueName, setVenueName] = useState<string | null>(null);
   const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
   const locSub = useRef<Location.LocationSubscription | null>(null);
-  const mapRef = useRef<MapView | null>(null);
+  const cameraRef = useRef<MapboxGL.Camera | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -95,7 +96,7 @@ export default function EtaDashboardScreen() {
         .from('venue_candidates')
         .select('lat, lng')
         .eq('plan_id', id!)
-        .eq('google_place_id', plan.selected_place_id)
+        .eq('place_id', plan.selected_place_id)
         .single();
       if (venue) {
         setVenueLat(venue.lat);
@@ -148,31 +149,29 @@ export default function EtaDashboardScreen() {
   }
 
   function fitMapToMarkers() {
-    const coords: { latitude: number; longitude: number }[] = [];
-    if (venueLat != null && venueLng != null) {
-      coords.push({ latitude: venueLat, longitude: venueLng });
+    const coords: [number, number][] = [];
+    if (venueLat != null && venueLng != null) coords.push([venueLng, venueLat]);
+    for (const m of memberLocations) coords.push([m.lng, m.lat]);
+    if (coords.length === 0) return;
+    if (coords.length === 1) {
+      cameraRef.current?.flyTo(coords[0], 400);
+      return;
     }
-    for (const m of memberLocations) {
-      coords.push({ latitude: m.lat, longitude: m.lng });
-    }
-    if (coords.length > 0 && mapRef.current) {
-      mapRef.current.fitToCoordinates(coords, {
-        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
-        animated: true,
-      });
-    }
+    const lngs = coords.map(c => c[0]);
+    const lats = coords.map(c => c[1]);
+    cameraRef.current?.fitBounds(
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [60, 60, 60, 60],
+      400,
+    );
   }
 
   useEffect(() => {
     fitMapToMarkers();
   }, [venueLat, venueLng, memberLocations]);
 
-  const defaultRegion: Region = {
-    latitude: venueLat ?? 37.78,
-    longitude: venueLng ?? -122.43,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  };
+  const defaultCenter: [number, number] = [venueLng ?? -122.43, venueLat ?? 37.78];
 
   async function startSharing() {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -254,7 +253,7 @@ export default function EtaDashboardScreen() {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (!session) return;
         supabase.functions.invoke('compute-eta', {
-          body: { plan_id: id! },
+          body: { plan_id: id!, provider: VENUE_PROVIDER },
           headers: { Authorization: `Bearer ${session.access_token}` },
         }).catch(() => {});
       });
@@ -294,29 +293,20 @@ export default function EtaDashboardScreen() {
         {/* Map */}
         {hasMapContent && (
           <View style={styles.mapContainer}>
-            <MapView
-              ref={mapRef}
-              style={styles.map}
-              initialRegion={defaultRegion}
-              showsUserLocation
-              showsMyLocationButton={false}
-            >
+            <MapboxGL.MapView style={styles.map} logoEnabled={false} attributionEnabled={false}>
+              <MapboxGL.Camera ref={cameraRef} centerCoordinate={defaultCenter} zoomLevel={13} />
+              <MapboxGL.UserLocation visible={isSharing} />
               {venueLat != null && venueLng != null && (
-                <Marker
-                  coordinate={{ latitude: venueLat, longitude: venueLng }}
-                  title={venueName ?? 'Destination'}
-                  pinColor={COLORS.error}
-                />
+                <MapboxGL.PointAnnotation id="venue" coordinate={[venueLng, venueLat]}>
+                  <View style={[styles.pin, { backgroundColor: COLORS.error }]} />
+                </MapboxGL.PointAnnotation>
               )}
               {memberLocations.map((m, i) => (
-                <Marker
-                  key={m.user_id}
-                  coordinate={{ latitude: m.lat, longitude: m.lng }}
-                  title={m.display_name}
-                  pinColor={MEMBER_COLORS[i % MEMBER_COLORS.length]}
-                />
+                <MapboxGL.PointAnnotation key={m.user_id} id={m.user_id} coordinate={[m.lng, m.lat]}>
+                  <View style={[styles.pin, { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]} />
+                </MapboxGL.PointAnnotation>
               ))}
-            </MapView>
+            </MapboxGL.MapView>
             {memberLocations.length > 0 && (
               <View style={styles.legend}>
                 {memberLocations.map((m, i) => (
@@ -474,6 +464,7 @@ const styles = StyleSheet.create({
   etaMode: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   etaDuration: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.primary },
   etaTime: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  pin: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: '#fff' },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: SPACING.sm, paddingHorizontal: SPACING.xl },
   emptyTitle: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
   emptySub: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },

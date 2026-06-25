@@ -66,7 +66,7 @@ export default function PlanDetailScreen() {
           .from('venue_candidates')
           .select('*')
           .eq('plan_id', id!)
-          .eq('google_place_id', planRes.data.selected_place_id)
+          .eq('place_id', planRes.data.selected_place_id)
           .single();
         if (v) setVenueDetails(v);
       }

@@ -27,7 +27,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER } from '@/constants';
 import { NavHead, ProgressBar, AvatarRow } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
 import type { VenueCandidateRow } from '@/types/database';
@@ -130,7 +130,7 @@ export default function VenuesScreen() {
     await supabase.from('plans').update({ anchor_lat: pos.coords.latitude, anchor_lng: pos.coords.longitude }).eq('id', id!);
     const { data: { session } } = await supabase.auth.getSession();
     const { error: fnError } = await supabase.functions.invoke('search-venues', {
-      body: { plan_id: id! },
+      body: { plan_id: id!, provider: VENUE_PROVIDER },
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (fnError) {
@@ -167,7 +167,7 @@ export default function VenuesScreen() {
     if (rightSwipes / totalMembers < AUTO_SELECT_THRESHOLD) return;
 
     await supabase.from('plans').update({
-      selected_place_id: venue.google_place_id,
+      selected_place_id: venue.place_id,
       selected_place_name: venue.name,
       state: 'venue_locked' as const,
     }).eq('id', id!);
@@ -204,7 +204,7 @@ export default function VenuesScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Lock it in', onPress: async () => {
         await supabase.from('plans').update({
-          selected_place_id: venue.google_place_id, selected_place_name: venue.name, state: 'venue_locked' as const,
+          selected_place_id: venue.place_id, selected_place_name: venue.name, state: 'venue_locked' as const,
         }).eq('id', id!);
         await supabase.from('venue_selection_events').insert({
           plan_id: id!, venue_candidate_id: venue.id, selected_by_user_id: uid!, selection_type: 'host' as const,
