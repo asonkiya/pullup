@@ -67,6 +67,8 @@ export default function CreatePlanScreen() {
         vibe: vibe || null,
         selected_place_id: place?.place_id ?? null,
         selected_place_name: place?.name ?? null,
+        selected_place_lat: place?.lat ?? null,
+        selected_place_lng: place?.lng ?? null,
         anchor_lat: place?.lat ?? null,
         anchor_lng: place?.lng ?? null,
       })

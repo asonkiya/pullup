@@ -16,8 +16,8 @@ import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants'
 
 export default function LoginScreen() {
   const [mode, setMode]       = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail]     = useState('dev@pullup.app');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail]     = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function submit() {

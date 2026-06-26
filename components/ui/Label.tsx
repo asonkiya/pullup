@@ -1,8 +1,9 @@
+import { ReactNode } from 'react';
 import { Text, StyleSheet, TextStyle } from 'react-native';
 import { COLORS, FONTS } from '@/constants';
 
 type Props = {
-  children: string;
+  children: ReactNode;
   style?: TextStyle;
 };
 

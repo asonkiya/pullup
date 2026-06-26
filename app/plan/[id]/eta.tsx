@@ -84,20 +84,24 @@ export default function EtaDashboardScreen() {
   async function loadPlanData() {
     const { data: plan } = await supabase
       .from('plans')
-      .select('title, selected_place_id, selected_place_name')
+      .select('title, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng')
       .eq('id', id!)
       .single();
     if (!plan) return;
     setPlanName(plan.title);
     setVenueName(plan.selected_place_name);
 
-    if (plan.selected_place_id) {
+    // Coords live on the plan; fall back to the venue candidate for older plans.
+    if (plan.selected_place_lat != null && plan.selected_place_lng != null) {
+      setVenueLat(plan.selected_place_lat);
+      setVenueLng(plan.selected_place_lng);
+    } else if (plan.selected_place_id) {
       const { data: venue } = await supabase
         .from('venue_candidates')
         .select('lat, lng')
         .eq('plan_id', id!)
         .eq('place_id', plan.selected_place_id)
-        .single();
+        .maybeSingle();
       if (venue) {
         setVenueLat(venue.lat);
         setVenueLng(venue.lng);
@@ -297,14 +301,14 @@ export default function EtaDashboardScreen() {
               <MapboxGL.Camera ref={cameraRef} centerCoordinate={defaultCenter} zoomLevel={13} />
               <MapboxGL.UserLocation visible={isSharing} />
               {venueLat != null && venueLng != null && (
-                <MapboxGL.PointAnnotation id="venue" coordinate={[venueLng, venueLat]}>
-                  <View style={[styles.pin, { backgroundColor: COLORS.error }]} />
-                </MapboxGL.PointAnnotation>
+                <MapboxGL.MarkerView coordinate={[venueLng, venueLat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+                  <View style={[styles.pin, styles.venuePin, { backgroundColor: COLORS.error }]} />
+                </MapboxGL.MarkerView>
               )}
               {memberLocations.map((m, i) => (
-                <MapboxGL.PointAnnotation key={m.user_id} id={m.user_id} coordinate={[m.lng, m.lat]}>
+                <MapboxGL.MarkerView key={m.user_id} coordinate={[m.lng, m.lat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
                   <View style={[styles.pin, { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]} />
-                </MapboxGL.PointAnnotation>
+                </MapboxGL.MarkerView>
               ))}
             </MapboxGL.MapView>
             {memberLocations.length > 0 && (
@@ -465,6 +469,7 @@ const styles = StyleSheet.create({
   etaDuration: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.primary },
   etaTime: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   pin: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: '#fff' },
+  venuePin: { width: 22, height: 22, borderRadius: 11, borderWidth: 3 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: SPACING.sm, paddingHorizontal: SPACING.xl },
   emptyTitle: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
   emptySub: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },

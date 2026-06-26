@@ -68,18 +68,19 @@ export const LiveMap = forwardRef<MapboxGL.Camera, Props>(function LiveMap({ des
       />
 
       {destination && (
-        <MapboxGL.PointAnnotation
-          id="destination"
+        <MapboxGL.MarkerView
           coordinate={[destination.lng, destination.lat]}
+          anchor={{ x: 0.5, y: 0.5 }}
+          allowOverlap
         >
           <View style={styles.dest}>
             <Feather name="map-pin" size={18} color="#fff" strokeWidth={2.4} />
           </View>
-        </MapboxGL.PointAnnotation>
+        </MapboxGL.MarkerView>
       )}
 
       {members.map((m) => (
-        <MapboxGL.MarkerView key={m.user_id} coordinate={[m.lng, m.lat]}>
+        <MapboxGL.MarkerView key={m.user_id} coordinate={[m.lng, m.lat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
           <View style={styles.memberWrap}>
             <Avatar name={m.display_name} index={m.index} size={34} ring />
             <View style={[styles.statusDot, { backgroundColor: DOT_COLOR[m.departure_status] }]} />

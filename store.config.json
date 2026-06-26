@@ -1,0 +1,35 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "info": {
+      "en-US": {
+        "title": "Pull Up",
+        "subtitle": "Plan it. Pick a spot. Pull up.",
+        "description": "Pull Up is the easiest way to turn \"we should hang out\" into actual plans.\n\nStart a plan, invite your crew, and let everyone vote on where to go by swiping through nearby spots. Once a venue locks in, share your ETA for that plan only — your friends see who's on the way and who's almost there on a live map. No group-chat chaos, no perpetual location tracking.\n\nWHY PULL UP\n\n• Swipe to decide — everyone swipes through nearby restaurants, bars, and cafes. The spot with the most love wins.\n• Live ETAs, on your terms — share your location for a single plan, only while the app is open. It ends automatically.\n• See who's close — a live arrival board shows who has left, who's on the way, and who has arrived.\n• Suggest your own spots — drop a specific place into the deck for the group to vote on.\n• Built-in plan chat — coordinate without losing the thread in your main group chat.\n\nPRIVACY FIRST\n\nLocation sharing is always per-plan, foreground-only, and fully under your control. We never track you in the background, and sharing ends on its own. You can delete your account and all your data at any time from the app.\n\nMake plans that actually happen. Pull up.",
+        "keywords": "plans,hangout,meetup,friends,group,ETA,location,venue,social,coordinate",
+        "releaseNotes": "First release of Pull Up. Make plans, vote on the spot, and share your ETA with the crew.",
+        "marketingUrl": "https://asonkiya.github.io/pullup",
+        "supportUrl": "https://asonkiya.github.io/pullup",
+        "privacyPolicyUrl": "https://asonkiya.github.io/pullup/privacy-policy"
+      }
+    },
+    "categories": ["SOCIAL_NETWORKING", "LIFESTYLE"],
+    "advisory": {
+      "alcoholTobaccoOrDrugUseOrReferences": "INFREQUENT_OR_MILD",
+      "contests": "NONE",
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "kidsAgeBand": null
+    }
+  }
+}

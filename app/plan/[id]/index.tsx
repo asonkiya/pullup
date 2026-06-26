@@ -187,6 +187,8 @@ export default function PlanDetailScreen() {
           state: 'open',
           selected_place_id: null,
           selected_place_name: null,
+          selected_place_lat: null,
+          selected_place_lng: null,
         }).eq('id', id!);
         if (error) { Alert.alert('Could not re-open voting', error.message); return; }
         notifyMembers('voting_reopened');
@@ -486,8 +488,8 @@ export default function PlanDetailScreen() {
     const notLeft   = members.filter(m => m.departure_status === 'not_left');
     const myStatus  = myMember?.departure_status;
 
-    const venueLat = venueDetails?.lat;
-    const venueLng = venueDetails?.lng;
+    const venueLat = plan.selected_place_lat ?? venueDetails?.lat;
+    const venueLng = plan.selected_place_lng ?? venueDetails?.lng;
     const destination = venueLat != null && venueLng != null
       ? { lat: venueLat, lng: venueLng, name: plan.selected_place_name ?? undefined }
       : null;
@@ -520,7 +522,7 @@ export default function PlanDetailScreen() {
             { label: 'On the way', list: onTheWay, bg: COLORS.warningTint, fg: COLORS.warningDeep },
             { label: 'Not left',   list: notLeft,  bg: COLORS.border,      fg: COLORS.textSecondary },
           ].map(({ label, list, bg, fg }) => list.length > 0 && (
-            <View key={label} style={[styles.statusRow, { shadowColor: '#000', ...SHADOWS.card }]}>
+            <View key={label} style={[styles.statusRow, SHADOWS.card]}>
               <View style={[styles.statusPill, { backgroundColor: bg }]}>
                 <Text style={[styles.statusPillText, { color: fg }]}>{label}</Text>
               </View>
@@ -539,6 +541,12 @@ export default function PlanDetailScreen() {
               <Feather name="chevron-right" size={16} color={COLORS.textFaint} />
             </TouchableOpacity>
           )}
+
+          {/* See everyone's ETA */}
+          <View style={styles.actionRow}>
+            <HButton label="Who's close" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/eta`)} />
+            <HButton label="Chat" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
+          </View>
 
           {/* Departure action */}
           <View style={styles.departureSection}>

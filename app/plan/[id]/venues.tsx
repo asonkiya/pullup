@@ -169,6 +169,8 @@ export default function VenuesScreen() {
     await supabase.from('plans').update({
       selected_place_id: venue.place_id,
       selected_place_name: venue.name,
+      selected_place_lat: venue.lat,
+      selected_place_lng: venue.lng,
       state: 'venue_locked' as const,
     }).eq('id', id!);
     await supabase.from('venue_selection_events').insert({
@@ -204,7 +206,8 @@ export default function VenuesScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Lock it in', onPress: async () => {
         await supabase.from('plans').update({
-          selected_place_id: venue.place_id, selected_place_name: venue.name, state: 'venue_locked' as const,
+          selected_place_id: venue.place_id, selected_place_name: venue.name,
+          selected_place_lat: venue.lat, selected_place_lng: venue.lng, state: 'venue_locked' as const,
         }).eq('id', id!);
         await supabase.from('venue_selection_events').insert({
           plan_id: id!, venue_candidate_id: venue.id, selected_by_user_id: uid!, selection_type: 'host' as const,
