@@ -60,14 +60,35 @@ export default function PlanDetailScreen() {
     ]);
     if (planRes.data) {
       setPlan(planRes.data);
-      // Fetch venue details if locked
+      // Fetch venue details if locked. Primary: match by place_id. Fallback:
+      // resolve via the latest selection event (stores the stable venue row id),
+      // which is immune to place_id drift across providers.
       if (planRes.data.selected_place_id) {
-        const { data: v } = await supabase
+        let v: VenueCandidateRow | null = null;
+        const { data: byPlace } = await supabase
           .from('venue_candidates')
           .select('*')
           .eq('plan_id', id!)
           .eq('place_id', planRes.data.selected_place_id)
-          .single();
+          .maybeSingle();
+        v = byPlace ?? null;
+        if (!v) {
+          const { data: sel } = await supabase
+            .from('venue_selection_events')
+            .select('venue_candidate_id')
+            .eq('plan_id', id!)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (sel?.venue_candidate_id) {
+            const { data: byId } = await supabase
+              .from('venue_candidates')
+              .select('*')
+              .eq('id', sel.venue_candidate_id)
+              .maybeSingle();
+            v = byId ?? null;
+          }
+        }
         if (v) setVenueDetails(v);
       }
     }
@@ -249,6 +270,9 @@ export default function PlanDetailScreen() {
     if (error) { Alert.alert('Could not update status', error.message); return; }
     notifyMembers(status === 'leaving' ? 'leaving' : 'arrived');
     fetchAll();
+    // When you mark yourself as leaving, take you to the live map so you can
+    // share your ETA and see who else is on the way.
+    if (status === 'leaving') router.push(`/plan/${id}/eta`);
   }
 
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';

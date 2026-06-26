@@ -91,20 +91,43 @@ export default function EtaDashboardScreen() {
     setPlanName(plan.title);
     setVenueName(plan.selected_place_name);
 
-    // Coords live on the plan; fall back to the venue candidate for older plans.
+    // Coords live on the plan. Fall back to the venue candidate for older plans:
+    // first by place_id, then via the latest selection event (stable row id).
     if (plan.selected_place_lat != null && plan.selected_place_lng != null) {
       setVenueLat(plan.selected_place_lat);
       setVenueLng(plan.selected_place_lng);
-    } else if (plan.selected_place_id) {
-      const { data: venue } = await supabase
+      return;
+    }
+    if (!plan.selected_place_id) return;
+
+    const { data: byPlace } = await supabase
+      .from('venue_candidates')
+      .select('lat, lng')
+      .eq('plan_id', id!)
+      .eq('place_id', plan.selected_place_id)
+      .maybeSingle();
+    if (byPlace) {
+      setVenueLat(byPlace.lat);
+      setVenueLng(byPlace.lng);
+      return;
+    }
+
+    const { data: sel } = await supabase
+      .from('venue_selection_events')
+      .select('venue_candidate_id')
+      .eq('plan_id', id!)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (sel?.venue_candidate_id) {
+      const { data: byId } = await supabase
         .from('venue_candidates')
         .select('lat, lng')
-        .eq('plan_id', id!)
-        .eq('place_id', plan.selected_place_id)
+        .eq('id', sel.venue_candidate_id)
         .maybeSingle();
-      if (venue) {
-        setVenueLat(venue.lat);
-        setVenueLng(venue.lng);
+      if (byId) {
+        setVenueLat(byId.lat);
+        setVenueLng(byId.lng);
       }
     }
   }

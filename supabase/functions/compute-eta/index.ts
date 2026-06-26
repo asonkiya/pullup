@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
 
   const { data: plan, error: planError } = await adminClient
     .from('plans')
-    .select('selected_place_id, travel_mode_default')
+    .select('selected_place_id, selected_place_lat, selected_place_lng, travel_mode_default')
     .eq('id', plan_id)
     .single();
 
@@ -49,13 +49,40 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Destination coordinates (works regardless of which provider produced the id)
-  const { data: venue } = await adminClient
-    .from('venue_candidates')
-    .select('lat, lng')
-    .eq('plan_id', plan_id)
-    .eq('place_id', plan.selected_place_id)
-    .maybeSingle();
+  // Destination coordinates: prefer coords stored on the plan; fall back to the
+  // venue candidate by place_id, then by the latest selection event (stable id).
+  let venue: { lat: number; lng: number } | null =
+    plan.selected_place_lat != null && plan.selected_place_lng != null
+      ? { lat: plan.selected_place_lat, lng: plan.selected_place_lng }
+      : null;
+
+  if (!venue) {
+    const { data: byPlace } = await adminClient
+      .from('venue_candidates')
+      .select('lat, lng')
+      .eq('plan_id', plan_id)
+      .eq('place_id', plan.selected_place_id)
+      .maybeSingle();
+    venue = byPlace ?? null;
+  }
+
+  if (!venue) {
+    const { data: sel } = await adminClient
+      .from('venue_selection_events')
+      .select('venue_candidate_id')
+      .eq('plan_id', plan_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (sel?.venue_candidate_id) {
+      const { data: byId } = await adminClient
+        .from('venue_candidates')
+        .select('lat, lng')
+        .eq('id', sel.venue_candidate_id)
+        .maybeSingle();
+      venue = byId ?? null;
+    }
+  }
 
   if (!venue) {
     return new Response(JSON.stringify({ computed: 0, reason: 'destination venue not found' }), {
