@@ -286,6 +286,11 @@ export default function PlanDetailScreen() {
     Linking.openURL(type === 'ride' ? rideUrl(venue) : bookingUrl(venue));
   }
 
+  // "Book a table" only makes sense for dining-type plans. Show it for dining
+  // vibes, or when no vibe is set (restaurant is the most common default).
+  const DINING_VIBES = ['Food', 'Drinks', 'Coffee', 'Party'];
+  const isDiningPlan = !plan?.vibe || DINING_VIBES.includes(plan.vibe);
+
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
   const myMember   = members.find(m => m.user_id === currentUserId);
   const isActive   = plan?.state === 'active';
@@ -438,7 +443,7 @@ export default function PlanDetailScreen() {
                   <HButton label="Website" variant="ghost" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.website_url!)} />
                 )}
               </View>
-              {venueDetails && (
+              {venueDetails && isDiningPlan && (
                 <HButton
                   label="Book a table"
                   variant="tint"
