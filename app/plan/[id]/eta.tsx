@@ -14,6 +14,7 @@ import MapboxGL from '@rnmapbox/maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import {
   COLORS,
   SPACING,
@@ -233,6 +234,7 @@ export default function EtaDashboardScreen() {
     setSessionId(session.id);
     setIsSharing(true);
     startLocationWatch(session.id);
+    logEvent('eta_share_started', { planId: id! });
   }
 
   async function stopSharing() {

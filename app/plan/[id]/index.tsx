@@ -17,6 +17,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
+import { rideUrl, bookingUrl } from '@/lib/affiliate';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
@@ -269,10 +271,19 @@ export default function PlanDetailScreen() {
       .eq('user_id', currentUserId);
     if (error) { Alert.alert('Could not update status', error.message); return; }
     notifyMembers(status === 'leaving' ? 'leaving' : 'arrived');
+    if (status === 'leaving') logEvent('departure_leaving', { planId: id! });
+    if (status === 'arrived') logEvent('departure_arrived', { planId: id! });
     fetchAll();
     // When you mark yourself as leaving, take you to the live map so you can
     // share your ETA and see who else is on the way.
     if (status === 'leaving') router.push(`/plan/${id}/eta`);
+  }
+
+  // High-intent commerce CTAs (book a table / get a ride). Opens the partner and
+  // records the click so we can measure conversion from plan → booking/ride.
+  function openCommerce(type: 'book' | 'ride', venue: { name: string; lat: number; lng: number }) {
+    logEvent('affiliate_click', { planId: id!, properties: { type, venue: venue.name } });
+    Linking.openURL(type === 'ride' ? rideUrl(venue) : bookingUrl(venue));
   }
 
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
@@ -427,6 +438,15 @@ export default function PlanDetailScreen() {
                   <HButton label="Website" variant="ghost" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.website_url!)} />
                 )}
               </View>
+              {venueDetails && (
+                <HButton
+                  label="Book a table"
+                  variant="tint"
+                  size="sm"
+                  fullWidth
+                  onPress={() => openCommerce('book', { name: venueDetails.name, lat: venueDetails.lat, lng: venueDetails.lng })}
+                />
+              )}
             </View>
           </Card>
 
@@ -591,6 +611,15 @@ export default function PlanDetailScreen() {
             <Text style={styles.footerHint}>
               {myStatus === 'not_left' ? "Tap when you leave — your crew will know." : "Flips to \"I've arrived\" once you're moving."}
             </Text>
+            {myStatus === 'not_left' && destination && (
+              <HButton
+                label={`Get a ride to ${plan.selected_place_name ?? 'the spot'}`}
+                variant="tint"
+                size="md"
+                fullWidth
+                onPress={() => openCommerce('ride', { name: destination.name ?? 'Destination', lat: destination.lat, lng: destination.lng })}
+              />
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>

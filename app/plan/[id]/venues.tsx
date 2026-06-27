@@ -27,6 +27,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER } from '@/constants';
 import { NavHead, ProgressBar, AvatarRow } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
@@ -179,6 +180,7 @@ export default function VenuesScreen() {
     supabase.functions.invoke('notify', {
       body: { event: 'venue_locked', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, place_name: venue.name } },
     });
+    logEvent('venue_locked', { planId: id!, properties: { source: 'auto' } });
     setMatchVenue(venue);
     setMatchVisible(true);
   }
@@ -215,6 +217,7 @@ export default function VenuesScreen() {
         supabase.functions.invoke('notify', {
           body: { event: 'venue_locked', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, place_name: venue.name } },
         });
+        logEvent('venue_locked', { planId: id!, properties: { source: 'manual' } });
         router.back();
       }},
     ]);
