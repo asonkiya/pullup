@@ -43,7 +43,10 @@ Searches for nearby venues based on the plan's vibe and location, then computes 
 POST /functions/v1/search-venues
 Authorization: Bearer <access_token>
 
-{ "plan_id": "uuid" }
+{
+  "plan_id": "uuid",
+  "provider": "google"   // optional — "google" (default) or "mapbox"
+}
 ```
 
 ### What it does
@@ -94,15 +97,21 @@ Computes ETAs from all members' current locations to the plan's selected destina
 POST /functions/v1/compute-eta
 Authorization: Bearer <access_token>
 
-{ "plan_id": "uuid" }
+{
+  "plan_id": "uuid",
+  "provider": "google"   // optional — "google" (default) or "mapbox"
+}
 ```
 
 ### What it does
 
-1. Fetches the plan's `selected_place_id` and `travel_mode_default`
+1. Resolves the plan destination via a 3-layer fallback (in order):
+   - `plans.selected_place_lat / selected_place_lng` — most reliable (set at lock time)
+   - `venue_candidates` row matching `plans.selected_place_id`
+   - Latest `venue_selection_events` row → join to `venue_candidates` (stable row ID, immune to place ID drift)
 2. Finds all active `location_share_sessions` for this plan
 3. Gets the latest `location_points` entry per session
-4. Calls **Google Routes `computeRouteMatrix`** with all member locations as origins and the destination as the single destination
+4. Calls **Google Routes `computeRouteMatrix`** (or Mapbox Directions API if `provider='mapbox'`) with all member locations as origins and the resolved destination
 5. Upserts results into `eta_snapshots` (conflict on `plan_id, user_id`)
 6. Broadcasts `eta_updated` event on the `eta-{plan_id}` Supabase Realtime channel
 

@@ -93,14 +93,14 @@ The `pullup://` scheme is only registered on a real built app (standalone or EAS
 2. Opens `app/plan/[id]/suggest.tsx` modal
 3. `PlacePicker` searches Google Places Autocomplete; user picks a result
 4. Place Details API fetches coords + address + Maps URL
-5. User taps "Suggest it" → `venue_candidates` insert (`source='suggestion'`, `suggested_by_user_id=me`, synthetic `google_place_id='suggestion:'+uuid`) + auto-right-swipe for suggester
+5. User taps "Suggest it" → `venue_candidates` insert (`source='suggestion'`, `suggested_by_user_id=me`, synthetic `place_id='suggestion:'+uuid`) + auto-right-swipe for suggester
 6. `notify` fires (`venue_suggested` event)
 7. Other members' venue decks update live via realtime `INSERT` sub on `venue_candidates`
 8. The suggestion card shows a "Suggested by {name}" pill at the top of its photo when displayed in the deck
 
 ### Code
 - Screen: `app/plan/[id]/suggest.tsx`
-- Picker: `components/PlacePicker.tsx` (uses `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` client-side)
+- Picker: `components/PlacePicker.tsx` (uses `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` client-side; defaults to Google provider)
 - Display: `app/plan/[id]/venues.tsx` — suggester name joined via `users!suggested_by_user_id(display_name)`
 - Realtime: `venues.tsx` subscribes to `venue_candidates` INSERT events filtered by `plan_id`
 
@@ -139,7 +139,10 @@ The `pullup://` scheme is only registered on a real built app (standalone or EAS
 - **LiveMap**: 196px tall MapView — destination pin + one Avatar marker per member currently sharing location, each with a status dot (gray=not_left / orange=leaving / green=arrived) and an ETA bubble ("12m")
 - **Status rows**: Arrived / On the way / Not left — each section only shown if non-empty, with an avatar row of who's in that bucket
 - **Chat peek**: last message preview tappable to open chat
-- **Bottom**: "I'm leaving" → flips to "I've arrived" depending on `myStatus`; arrived shows a checkmark banner
+- **Bottom**: "I'm leaving" → navigates to `plan/[id]/eta.tsx` (live location + ETA sharing). Tapping "I'm arriving" from there sets `departure_status='arrived'` and returns to plan detail.
+- **Affiliate CTAs** (contextual):
+  - "Get a ride" (Uber deep link) — shown for members whose `departure_status = 'not_left'`
+  - "Book a table" (OpenTable deep link) — shown only for dining-vibe plans (Food / Drinks / Coffee / Party / no vibe)
 - **Overflow menu (host)**: Edit plan, Cancel plan, End plan
 
 ### DONE (`completed` / `cancelled`)
@@ -313,3 +316,4 @@ Specialized (`components/`):
 - **In-app friend graph** — currently the only way to add people is via per-plan invite link
 - **Photo uploads in chat** — text only
 - **Plan templates / "redo this plan"** — no UI for cloning past plans
+- **Affiliate revenue** — CTAs are wired and clicks are tracked; actual revenue requires applying to Uber Affiliate Program and OpenTable's affiliate program, then setting codes in `lib/affiliate.ts`

@@ -8,8 +8,8 @@ Pull Up is a mobile-first social planning app. Users create plans, invite friend
 +-------------------+       +-------------------+       +-------------------+
 |   Expo / React    | <---> |     Supabase      | <---> |   Google Maps     |
 |   Native App      |       |   (Postgres +     |       |   Platform        |
-|   (Expo Go)       |       |    Auth + Edge    |       |   (Places +       |
-|                   |       |    Functions +    |       |    Routes APIs)   |
+|   (EAS dev build  |       |    Auth + Edge    |       |   (Places +       |
+|    or Expo Go*)   |       |    Functions +    |       |    Routes APIs)   |
 |                   |       |    Realtime)      |       |                   |
 +-------------------+       +-------------------+       +-------------------+
         |                           |
@@ -18,6 +18,8 @@ Pull Up is a mobile-first social planning app. Users create plans, invite friend
         v                           v
    iOS / Android              exp.host/--/api/v2/push/send
 ```
+
+*Expo Go works for most features. An EAS dev build is required for native modules (e.g. Mapbox), Reanimated v4 gestures, and `pullup://` deep links.
 
 ## Tech stack
 
@@ -32,8 +34,10 @@ Pull Up is a mobile-first social planning app. Users create plans, invite friend
 | ETA computation | Google Routes API — `computeRouteMatrix` |
 | Notifications | Expo Push Notifications |
 | Deep linking | Custom URL scheme (`pullup://`) — works in standalone/dev build, not Expo Go |
-| Maps | `react-native-maps` with custom Avatar markers |
+| Maps | `react-native-maps` with custom Avatar markers (main branch) |
 | Gestures | `react-native-gesture-handler` + `react-native-reanimated` (venues swipe deck only) |
+| Analytics | Fire-and-forget event logging into `analytics_events` via `lib/analytics.ts` |
+| Affiliate CTAs | `lib/affiliate.ts` — Uber + OpenTable deep links surfaced at high-intent moments |
 
 ## App routing (Expo Router)
 
@@ -42,8 +46,7 @@ app/
   _layout.tsx               # Root: font loading, auth guard, push token registration, deep links, GestureHandlerRootView
   (auth)/
     _layout.tsx
-    login.tsx               # Email/password sign in & sign up
-    verify.tsx              # Magic-link verification handoff
+    login.tsx               # Email/password sign in & sign up (handles email-confirmation flow)
   (tabs)/
     _layout.tsx             # Custom tab bar with raised center "+" button
     index.tsx               # Plans list: live ticker, next-up hero, upcoming rows, past (collapsible)
@@ -171,5 +174,10 @@ Specialized components in `components/`:
 - `LiveMap` — MapView with custom Avatar markers
 - `MatchMoment` — full-screen overlay when a venue auto-locks
 - `PlacePicker` — reusable Google Places autocomplete input
+
+Lib utilities in `lib/`:
+- `supabase.ts` — Supabase client singleton
+- `analytics.ts` — fire-and-forget funnel event logging into `analytics_events`
+- `affiliate.ts` — Uber + OpenTable deep link helpers; `AFFILIATE` config block for partner codes
 
 Font: Outfit (400/500/600/700/800) loaded via `@expo-google-fonts/outfit` in the root layout.

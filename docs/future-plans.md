@@ -2,7 +2,7 @@
 
 A running backlog of work that hasn't been picked up yet, grouped by category and ordered by rough priority within each group. An agent (or human) should be able to read any entry and have enough context to start, including the files involved, the data model touchpoints, and the gotchas to watch for.
 
-Last refreshed: 2026-06-16.
+Last refreshed: 2026-06-29.
 
 ---
 
@@ -107,58 +107,20 @@ Use `expo-secure-store` to set an `onboarding_completed` flag so it only shows o
 
 ## Production readiness (pre-launch checklist)
 
-### 11. EAS dev build
-**Why.** Required for:
-- `pullup://` deep links to actually work when tapped from iMessage (currently they only work inside Expo Go via `exp://`, see [features.md §2](features.md#expo-go-caveat))
-- Reanimated v4 + gesture-handler to work for the venue swipe deck on the device
-- Background location (item #6)
-- Real-world testing with people who don't run your local dev server
+### 11. EAS dev build ✅ DONE
+`eas.json` and `app.json` are configured (bundle ID `com.ahrimane.pullup`, team `Z428Z377RQ`). Dev client builds are working. See `docs/submission-runbook.md` for the production build step.
 
-**How.** `eas build --profile development --platform ios`. Add an `eas.json` if not present. Install on test devices via TestFlight or direct install.
+### 12. Privacy policy ✅ DONE
+`docs/privacy-policy.md` is written. Needs to be published via GitHub Pages — see `docs/submission-runbook.md` step 1.
 
-**Files.** `eas.json` (new), `app.json` may need updates to bundle ID / signing config.
+### 13. Delete account flow ✅ DONE
+In-app "Delete account" is accessible from the profile screen (required by App Store guideline 5.1.1.v).
 
-### 12. Privacy policy + terms of service
-**Why.** App Store and Play Store require both. Especially load-bearing because Pull Up handles real-time location.
+### 14. Analytics wiring ✅ DONE
+`lib/analytics.ts` ships fire-and-forget event logging. Instrumented events: `plan_created`, `plan_joined`, `venue_suggested`, `venue_locked`, `eta_share_started`, `departure_leaving`, `departure_arrived`, `affiliate_click`. Retention + funnel SQL in `docs/analytics-queries.md`.
 
-**Approach.** Use a generator (e.g., termly.io, iubenda) — get a real lawyer review if/when this monetizes. Host the pages somewhere stable (a GitHub Pages site is fine for v1) and link from the app's profile/settings screen.
-
-**Files.** `app/(tabs)/profile.tsx` (links), no schema changes.
-
-### 13. Delete account flow
-**Why.** Apple's App Store guidelines (5.1.1.v) require this for any app with account signup. Play Store has similar requirements.
-
-**Fix.** In profile, a "Delete account" button with a 2-step confirmation. Calls a new edge function `delete-account` that:
-1. Calls `admin.auth.deleteUser()` (Supabase admin API)
-2. Cascades clean up `users` row → cascades clean up plan_members, location data, etc. via FK cascades
-
-**Files.** `app/(tabs)/profile.tsx`, `supabase/functions/delete-account/index.ts` (new).
-
-**Gotcha.** Make sure cascade deletes really do clean everything — the `plans` cascade list is verified in [database.md "Cascade behaviour"](database.md#cascade-behaviour) but `users` cascade behaviour also matters. Be careful with `plans` rows where the deleted user is `creator_user_id` — there's no `on delete cascade` defined on that column, so an orphaned plan with no creator might result.
-
-### 14. Analytics wiring
-**Problem.** `analytics_events` table exists in the schema but nothing writes to it.
-
-**Fix.** Hook up these events to the existing table:
-- `plan_created`
-- `venue_locked` (with `selection_type` as a prop)
-- `venue_suggested`
-- `plan_activated`
-- `location_sharing_started`
-- `chat_message_sent`
-- `voting_reopened`
-- `plan_completed` / `plan_cancelled`
-
-Write a thin client helper `lib/analytics.ts` with `track(event_name, properties)` that just does an insert. No third-party tool needed yet.
-
-**Files.** `lib/analytics.ts` (new), small additions in handlers across `app/`.
-
-### 15. App Store / Play Store submission
-**Why.** `docs/publishing.md` walks through the process but you haven't actually done it.
-
-**Prereqs.** Items #11, #12, #13 above. Apple Developer account ($99/yr), Play Console account ($25 one-time).
-
-**Process.** EAS Submit handles most of it (`eas submit --platform ios`).
+### 15. App Store submission — IN PROGRESS
+Store listing (`store.config.json`) passes `eas metadata:lint`. Submission runbook at `docs/submission-runbook.md`. Remaining steps require interactive Apple account access — see the runbook.
 
 ---
 
@@ -197,6 +159,6 @@ Write a thin client helper `lib/analytics.ts` with `track(event_name, properties
 - Always check `docs/database.md` for current schema before assuming column names. The repo iterates fast and migrations land often.
 - `docs/features.md` has end-to-end flow walkthroughs that are usually the fastest way to understand how a feature actually works.
 - Push to `main` is the workflow — small commits, no PR ceremony for solo work.
-- Run `npx tsc --noEmit` before committing. Two pre-existing TS errors are known and OK to ignore: `app/plan/[id]/index.tsx` Label children (number→string) and shadowColor duplicate on the LIVE state status row.
+- Run `npx tsc --noEmit` before committing. The codebase is currently TS-clean — no known suppressions.
 - Realtime subs in Supabase don't always fire for the user's own writes — every mutating handler in the codebase explicitly calls `fetchAll()` (or the equivalent refetch) after the await. Don't rely on realtime alone.
 - Expo Go limitations to remember: Reanimated v4 + gesture-handler need a dev build, custom URL schemes (`pullup://`) don't work, background location doesn't work.
