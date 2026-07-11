@@ -27,7 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER, AUTO_SELECT_THRESHOLD } from '@/constants';
 import { NavHead, ProgressBar, AvatarRow, Skeleton } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
 import type { VenueCandidateRow } from '@/types/database';
@@ -37,7 +37,6 @@ type VenueWithSuggester = VenueCandidateRow & { suggester_name?: string | null }
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = SCREEN_W - SPACING.lg * 2;
 const FLING_THRESHOLD = 120;
-const AUTO_SELECT_THRESHOLD = 0.6;
 
 export default function VenuesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -166,21 +165,56 @@ export default function VenuesScreen() {
     if (!totalMembers || !rightSwipes) return;
     if (rightSwipes / totalMembers < AUTO_SELECT_THRESHOLD) return;
 
+    // This venue hit threshold — but don't lock first-past-the-post if another
+    // spot is equally loved. Compare against all candidates' right-swipes.
+    const { data: allRight } = await supabase
+      .from('venue_swipes')
+      .select('venue_candidate_id')
+      .eq('plan_id', id!)
+      .eq('direction', 'right');
+    const counts = new Map<string, number>();
+    for (const s of allRight ?? []) {
+      counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
+    }
+    const overThreshold = [...counts.entries()].filter(
+      ([, c]) => c / totalMembers >= AUTO_SELECT_THRESHOLD
+    );
+    const maxCount = Math.max(...overThreshold.map(([, c]) => c));
+    const leaders = overThreshold.filter(([, c]) => c === maxCount).map(([vid]) => vid);
+
+    if (leaders.length > 1) {
+      // Genuine tie — the host breaks it in the face-off.
+      if (isHost) {
+        router.push(`/plan/${id}/faceoff`);
+      } else {
+        supabase.functions.invoke('notify', {
+          body: { event: 'venue_tie', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle } },
+        });
+        Alert.alert("It's a tie!", 'Two spots are equally loved — the host picks the winner.');
+      }
+      return;
+    }
+
+    // Single clear leader; lock it (usually the venue just swiped).
+    const winner = leaders[0] === venue.id
+      ? venue
+      : candidates.find((c) => c.id === leaders[0]) ?? venue;
+
     await supabase.from('plans').update({
-      selected_place_id: venue.place_id,
-      selected_place_name: venue.name,
-      selected_place_lat: venue.lat,
-      selected_place_lng: venue.lng,
+      selected_place_id: winner.place_id,
+      selected_place_name: winner.name,
+      selected_place_lat: winner.lat,
+      selected_place_lng: winner.lng,
       state: 'venue_locked' as const,
     }).eq('id', id!);
     await supabase.from('venue_selection_events').insert({
-      plan_id: id!, venue_candidate_id: venue.id, selected_by_user_id: uid!, selection_type: 'auto' as const,
+      plan_id: id!, venue_candidate_id: winner.id, selected_by_user_id: uid!, selection_type: 'auto' as const,
     });
     supabase.functions.invoke('notify', {
-      body: { event: 'venue_locked', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, place_name: venue.name } },
+      body: { event: 'venue_locked', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, place_name: winner.name } },
     });
     logEvent('venue_locked', { planId: id!, properties: { source: 'auto' } });
-    setMatchVenue(venue);
+    setMatchVenue(winner);
     setMatchVisible(true);
   }
 

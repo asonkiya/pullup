@@ -18,7 +18,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, bookingUrl } from '@/lib/affiliate';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
@@ -31,6 +31,7 @@ export default function PlanDetailScreen() {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [venueDetails, setVenueDetails] = useState<VenueCandidateRow | null>(null);
   const [swipeProgress, setSwipeProgress] = useState({ swiped: 0, total: 0 });
+  const [tieCount, setTieCount] = useState(0);
   const [lastMessage, setLastMessage] = useState<{ body: string; name: string } | null>(null);
   const [memberLocations, setMemberLocations] = useState<LiveMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +108,27 @@ export default function PlanDetailScreen() {
       .eq('plan_id', id!)
       .eq('user_id', uid!);
     setSwipeProgress({ swiped: swiped ?? 0, total: total ?? 0 });
+
+    // Tie detection: ≥2 candidates at the auto-select threshold with equal
+    // top vote counts means the host needs to break it in the face-off.
+    if (planRes.data?.state === 'open' && membersRes.data?.length) {
+      const { data: allRight } = await supabase
+        .from('venue_swipes')
+        .select('venue_candidate_id')
+        .eq('plan_id', id!)
+        .eq('direction', 'right');
+      const counts = new Map<string, number>();
+      for (const s of allRight ?? []) {
+        counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
+      }
+      const totalMembers = membersRes.data.length;
+      const over = [...counts.values()].filter((c) => c / totalMembers >= AUTO_SELECT_THRESHOLD);
+      const maxC = over.length ? Math.max(...over) : 0;
+      const leaders = over.filter((c) => c === maxC);
+      setTieCount(leaders.length > 1 ? leaders.length : 0);
+    } else {
+      setTieCount(0);
+    }
 
     // Last chat message
     const { data: msgs } = await supabase
@@ -384,6 +406,26 @@ export default function PlanDetailScreen() {
           </View>
         </View>
         <ScrollView contentContainerStyle={styles.body}>
+          {/* Tie banner */}
+          {tieCount > 1 && (
+            <TouchableOpacity
+              style={styles.tieBanner}
+              onPress={() => isHost && router.push(`/plan/${id}/faceoff`)}
+              activeOpacity={isHost ? 0.85 : 1}
+            >
+              <Text style={styles.tieEmoji}>⚡️</Text>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.tieTitle}>It&apos;s a tie!</Text>
+                <Text style={styles.tieSub}>
+                  {isHost
+                    ? `${tieCount} spots are equally loved — tap to break the tie`
+                    : 'Waiting for the host to pick the winner'}
+                </Text>
+              </View>
+              {isHost && <Feather name="chevron-right" size={18} color={COLORS.warningDeep} />}
+            </TouchableOpacity>
+          )}
+
           {/* Voting card */}
           <View style={styles.votingCard}>
             <Text style={styles.votingTitle}>Find the spot</Text>
@@ -729,6 +771,20 @@ const styles = StyleSheet.create({
   body: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xxl },
 
   // Planning
+  tieBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.warningTint,
+    borderRadius: RADIUS.card,
+    borderWidth: 1.5,
+    borderColor: '#F2D9A8',
+    padding: SPACING.md,
+  },
+  tieEmoji: { fontSize: 24 },
+  tieTitle: { fontSize: FONT_SIZE.md, fontFamily: FONTS.bold, color: COLORS.warningDeep, includeFontPadding: false },
+  tieSub: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.warningDeep, includeFontPadding: false },
+
   votingCard: {
     backgroundColor: COLORS.primaryFaint,
     borderWidth: 1.5,

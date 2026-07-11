@@ -16,7 +16,8 @@ type NotifyEvent =
   | 'arrived'
   | 'chat_message'
   | 'crew_reinvite'
-  | 'crew_invited';
+  | 'crew_invited'
+  | 'venue_tie';
 
 interface NotifyPayload {
   event: NotifyEvent;
@@ -65,6 +66,8 @@ function buildMessage(payload: NotifyPayload): { title: string; body: string } {
       return { title: plan_title, body: `${actor_name} is planning another one — tap to join` };
     case 'crew_invited':
       return { title: plan_title, body: `${actor_name} invited you — tap to join` };
+    case 'venue_tie':
+      return { title: plan_title, body: `It's a tie! Two spots are equally loved — you pick the winner` };
     default:
       return { title: plan_title, body: 'New activity' };
   }
@@ -137,8 +140,8 @@ Deno.serve(async (req) => {
       (m) => m.user_id !== actor_user_id && m.users?.push_token
     );
 
-    // For member_joined, only notify the host
-    if (event === 'member_joined') {
+    // Host-only events
+    if (event === 'member_joined' || event === 'venue_tie') {
       recipients = recipients.filter((m) => m.role === 'host');
     }
   }
