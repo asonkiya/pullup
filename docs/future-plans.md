@@ -2,7 +2,7 @@
 
 A running backlog of work that hasn't been picked up yet, grouped by category and ordered by rough priority within each group. An agent (or human) should be able to read any entry and have enough context to start, including the files involved, the data model touchpoints, and the gotchas to watch for.
 
-Last refreshed: 2026-06-29.
+Last refreshed: 2026-07-11.
 
 ---
 
@@ -29,14 +29,8 @@ Same pattern as above — `activatePlan()` in `app/plan/[id]/index.tsx:118-126` 
 
 ## Feature gaps (real holes in the product)
 
-### 4. Move location sharing into the root layout
-**Problem.** `Location.watchPositionAsync` lives inside `app/plan/[id]/eta.tsx`. When the user navigates away from that screen, the cleanup runs `locSub.current?.remove()` → no new `location_points` until they return to the ETA tab. The `location_share_sessions` row stays `active` so other members see a frozen avatar.
-
-**Fix.** Lift the subscription into `app/_layout.tsx` (or a custom hook used by the root layout). On mount, query `location_share_sessions` for any `(user_id=me, status='active', expires_at>now)` rows and start a single watch that uploads points for ALL active sessions.
-
-**Files.** `app/_layout.tsx`, `app/plan/[id]/eta.tsx` (remove the watch), maybe a new `lib/locationSharing.ts` hook.
-
-**Gotcha.** iOS will still suspend `watchPositionAsync` ~10 min after backgrounding without background-location entitlements. This fix just removes the screen-coupling — true background tracking is item #6.
+### 4. Move location sharing into the root layout ✅ DONE
+`lib/locationSharing.ts` hook mounted in the root layout watches once for all active sessions and uploads points per session. Screens create/stop sessions and call `refreshLocationSharing()`. iOS still suspends the watch when backgrounded without background entitlements — true background tracking remains item #6.
 
 ### 5. Face-off tiebreaker
 **Problem.** When multiple venues all hit the 60% auto-select threshold, `checkAutoSelect` in `app/plan/[id]/venues.tsx:133-154` locks the first one it sees. No tie-breaking.
@@ -59,49 +53,21 @@ Same pattern as above — `activatePlan()` in `app/plan/[id]/index.tsx:118-126` 
 
 **Files.** `app/plan/[id]/eta.tsx` (mode toggle), `app/_layout.tsx` (register task), new `lib/backgroundLocationTask.ts`, migration to extend `share_mode` enum.
 
-### 7. Recent crew / past members suggestions
-**Problem.** Invite screen (`app/plan/[id]/invite.tsx`) shows the link card and share button, but has a placeholder section for "or grab a recent crew" that's never been wired up.
-
-**Fix.** Query `plan_members` joined on past plans for the current user, dedupe by `user_id`, show as tappable avatar tiles. Tapping inserts that user into `plan_members` for the new plan and notifies them.
-
-**Files.** `app/plan/[id]/invite.tsx`.
-
-**Gotcha.** Need to think about whether you can add someone to a plan without their consent. Today, joining requires the user to tap an invite link. Adding them directly bypasses that. Probably want this to send them a notification with a "Join" CTA rather than silently inserting.
+### 7. Recent crew / past members suggestions ✅ DONE
+Invite screen shows past co-members as tappable tiles. Tapping sends a `crew_invited` push that deep-links to the plan's join token — the invitee joins themselves (consent-respecting, and consistent with the `pm_insert_self` RLS policy). `notify` gained `recipient_user_ids` for targeting non-members.
 
 ---
 
 ## UX polish (cosmetic, low risk)
 
-### 8. Skeleton loaders
-**Problem.** All loading states are `ActivityIndicator` spinners. Looks generic.
+### 8. Skeleton loaders ✅ DONE
+`components/ui/Skeleton.tsx` (RN Animated shimmer, Expo Go safe) with `SkeletonRow`/`SkeletonList`. Replaced spinners on home, plan detail, and the venue deck.
 
-**Fix.** Build `components/ui/Skeleton.tsx` — a shimmer-animated `View` (using RN `Animated`, not Reanimated, since the `HButton` precedent showed Reanimated v4 isn't compatible with Expo Go). Replace `ActivityIndicator` in:
-- `app/(tabs)/index.tsx` (plans list loading)
-- `app/plan/[id]/index.tsx` (plan detail loading)
-- `app/plan/[id]/venues.tsx` ("Finding spots nearby…" state)
+### 9. Empty states + first-time onboarding ✅ DONE
+The home empty state is now a 3-step how-it-works walkthrough with a "Start your first plan" CTA. It lives in the empty state, so it self-expires once the user has plans — no onboarding flag or extra route.
 
-**Files.** `components/ui/Skeleton.tsx` (new), `components/ui/index.ts` (export), then 3 screen edits.
-
-### 9. Empty states + first-time onboarding
-**Problem.** The empty-plans state on home is just text ("No plans yet — tap + below"). New users have no context for what the app does.
-
-**Fix.** A 2- or 3-screen welcome carousel on first launch (or on first time the home screen is empty):
-1. "Swipe to find the spot" with a mock venue card
-2. "See who's on the way" with a mock LiveMap
-3. "+ to start a plan"
-
-Use `expo-secure-store` to set an `onboarding_completed` flag so it only shows once.
-
-**Files.** `app/onboarding.tsx` (new), `app/_layout.tsx` (route), `app/(tabs)/index.tsx` (empty state copy refresh).
-
-### 10. Profile screen functionality
-**Problem.** `app/(tabs)/profile.tsx` is mostly a sign-out button. Should also support:
-- Edit `display_name`
-- Toggle push notifications (with copy explaining what events trigger)
-- View location sharing history (past `location_share_sessions`)
-- Delete account (see item #13)
-
-**Files.** `app/(tabs)/profile.tsx`, possibly a new `app/profile/edit.tsx` and `app/profile/notifications.tsx`.
+### 10. Profile screen functionality — MOSTLY DONE
+Display-name editing, delete account (2-step confirm → `delete-account` edge function), and privacy policy link all exist. Still open if wanted: push notification toggle, location sharing history view.
 
 ---
 
@@ -140,12 +106,8 @@ Store listing (`store.config.json`) passes `eas metadata:lint`. Submission runbo
 
 **Files.** Migration, `app/plan/[id]/chat.tsx`, possibly a `MessageMedia` component.
 
-### 18. Plan templates / "redo this plan"
-**Problem.** No way to re-use a past plan setup.
-
-**Fix.** "Plan another with this crew" CTA on the DONE state already exists in the UI but isn't wired up. Hook it to: create a new plan with same title pattern, same vibe, prefill members.
-
-**Files.** `app/plan/[id]/index.tsx` (DONE state action), helper to clone plan + members.
+### 18. Plan templates / "redo this plan" ✅ DONE
+"Plan another with this crew" on the DONE state clones the plan (title + vibe), creates a join token, and sends a `crew_reinvite` push to the old crew that deep-links to `/join/{token}`. Members re-join themselves (RLS-consistent).
 
 ### 19. iMessage extension / WhatsApp share card
 **Why.** The network-effect cliff — getting friend group #2 to install the app — is the single biggest adoption blocker (see the product spec's "Honest concerns"). An iMessage extension that lets friends RSVP without installing the standalone app would meaningfully lower the friction.

@@ -179,5 +179,6 @@ Lib utilities in `lib/`:
 - `supabase.ts` — Supabase client singleton
 - `analytics.ts` — fire-and-forget funnel event logging into `analytics_events`
 - `affiliate.ts` — Uber + OpenTable deep link helpers; `AFFILIATE` config block for partner codes
+- `locationSharing.ts` — root-mounted hook that keeps location sharing alive across screens (one watch for all active share sessions)
 
 Font: Outfit (400/500/600/700/800) loaded via `@expo-google-fonts/outfit` in the root layout.

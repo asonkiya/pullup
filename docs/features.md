@@ -192,8 +192,8 @@ Also: `useFocusEffect` calls `fetchAll()` whenever the screen regains focus. Thi
 - Explicit consent screen before first share, with `consent_version` recorded
 - `lp_select_co_member` RLS policy gates reads to (a) the session is active AND (b) the requester is a plan member
 
-### Caveat
-The location subscription is bound to the ETA screen's lifecycle. Navigate away from `eta.tsx` and `locSub.current?.remove()` runs in cleanup — no more new points until you return to that screen (the `AppState` listener pushes one fresh point when the app foregrounds). A future improvement is moving the subscription up into the root layout so sharing persists across screens.
+### Sharing lifecycle
+The position watch lives in `lib/locationSharing.ts`, mounted once in the root layout — sharing persists across screens and app foregrounds. The hook watches while the user has ≥1 active, unexpired `location_share_sessions` row and uploads a point per session on each fix. Screens create/stop sessions and call `refreshLocationSharing()` to nudge the watcher (realtime doesn't reliably fire for one's own writes). The hook never prompts for permission — the ETA screen does that; without permission the watch simply doesn't start. iOS still suspends the watch when the app is backgrounded (foreground-only by design).
 
 ---
 
@@ -311,9 +311,7 @@ Specialized (`components/`):
 
 - **Face-off tiebreaker** — when two venues both hit threshold, host picks via a bracket UI
 - **Background location tracking** — needs `expo-task-manager` + dev build
-- **Skeleton loading states** — currently spinners
 - **Manual paste-invite-code entry point** — for Expo Go testing without deep linking
-- **In-app friend graph** — currently the only way to add people is via per-plan invite link
+- **In-app friend graph** — currently the only way to add people is via per-plan invite link (softened by recent-crew re-invites on the invite screen)
 - **Photo uploads in chat** — text only
-- **Plan templates / "redo this plan"** — no UI for cloning past plans
 - **Affiliate revenue** — CTAs are wired and clicks are tracked; actual revenue requires applying to Uber Affiliate Program and OpenTable's affiliate program, then setting codes in `lib/affiliate.ts`

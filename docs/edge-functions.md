@@ -171,8 +171,14 @@ Authorization: Bearer <access_token>
 | `leaving` | All members except actor | `"{actor_name} is on the way!"` |
 | `arrived` | All members except actor | `"{actor_name} arrived!"` |
 | `chat_message` | All members except actor | `"{actor_name}: {message_body}"` (truncated to 100 chars) |
+| `crew_reinvite` | All members of the referenced (old) plan except actor | `"{actor_name} is planning another one — tap to join"` |
+| `crew_invited` | Explicit `recipient_user_ids` only | `"{actor_name} invited you — tap to join"` |
 
 The actor is always excluded from the recipient list. `member_joined` additionally filters to host only.
+
+**Targeting non-members:** pass `recipient_user_ids: string[]` at the top level of the payload to send to exactly those users instead of the plan's members (used to invite people who aren't in the plan yet).
+
+**Join deep links:** if `extra.join_token` is set, it's included in the push `data` payload; the app routes the tap to `/join/{join_token}` instead of the plan screen.
 
 ### What it does
 
