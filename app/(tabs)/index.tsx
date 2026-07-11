@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useRef } from 'react';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { COLORS, FONTS, FONT_SIZE, SPACING, SHADOWS } from '@/constants';
 import { Avatar, AvatarRow, Card, Label, StatePill, VibeChip } from '@/components/ui';
@@ -133,10 +134,31 @@ export default function HomeScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} />
       ) : plans.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No plans yet</Text>
-          <Text style={styles.emptySub}>Tap + below to create your first plan</Text>
-        </View>
+        <ScrollView contentContainerStyle={styles.emptyScroll} showsVerticalScrollIndicator={false}>
+          <Text style={styles.emptyHeadline}>Make plans that{'\n'}actually happen.</Text>
+
+          {([
+            { icon: 'zap',       title: 'Start a plan',           sub: 'A title and a vibe is all it takes. Invite the crew with one link.' },
+            { icon: 'heart',     title: 'Swipe to pick the spot', sub: 'Everyone swipes nearby places. Most-loved spot wins — no group-chat debate.' },
+            { icon: 'map-pin',   title: 'Watch everyone pull up', sub: 'Live ETAs on a map, per plan only. See who’s close, who just left.' },
+          ] as const).map((step, i) => (
+            <View key={step.icon} style={styles.stepCard}>
+              <View style={styles.stepIcon}>
+                <Feather name={step.icon} size={20} color={COLORS.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.stepTitle}>{step.title}</Text>
+                <Text style={styles.stepSub}>{step.sub}</Text>
+              </View>
+              <Text style={styles.stepNum}>{i + 1}</Text>
+            </View>
+          ))}
+
+          <TouchableOpacity style={styles.emptyCta} onPress={() => router.push('/plan/create')} activeOpacity={0.85}>
+            <Feather name="plus" size={18} color="#fff" />
+            <Text style={styles.emptyCtaText}>Start your first plan</Text>
+          </TouchableOpacity>
+        </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -453,25 +475,71 @@ const styles = StyleSheet.create({
     color: COLORS.textFaint,
   },
 
-  // Empty state
-  empty: {
-    flex: 1,
+  // Empty state / first-run walkthrough
+  emptyScroll: {
+    padding: SPACING.lg,
+    paddingTop: SPACING.xl,
+    gap: SPACING.md,
+  },
+  emptyHeadline: {
+    fontSize: 32,
+    lineHeight: 38,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+    includeFontPadding: false,
+  },
+  stepCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: SPACING.lg,
+    ...SHADOWS.card,
+  },
+  stepIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.primaryFaint,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.xl,
   },
-  emptyTitle: {
-    fontSize: FONT_SIZE.xl,
+  stepTitle: {
+    fontSize: FONT_SIZE.md,
     fontFamily: FONTS.bold,
     color: COLORS.text,
     includeFontPadding: false,
   },
-  emptySub: {
-    fontSize: FONT_SIZE.md,
+  stepSub: {
+    fontSize: FONT_SIZE.sm,
     fontFamily: FONTS.regular,
     color: COLORS.textSecondary,
-    textAlign: 'center',
+    lineHeight: 19,
+    includeFontPadding: false,
+  },
+  stepNum: {
+    fontSize: 26,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.primaryLight,
+    includeFontPadding: false,
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginTop: SPACING.sm,
+    ...SHADOWS.button,
+  },
+  emptyCtaText: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.bold,
+    color: '#fff',
     includeFontPadding: false,
   },
 });
