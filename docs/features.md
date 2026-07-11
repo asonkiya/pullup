@@ -309,9 +309,7 @@ Specialized (`components/`):
 
 ## What's not built yet
 
-- **Face-off tiebreaker** — when two venues both hit threshold, host picks via a bracket UI
 - **Background location tracking** — needs `expo-task-manager` + dev build
-- **Manual paste-invite-code entry point** — for Expo Go testing without deep linking
 - **In-app friend graph** — currently the only way to add people is via per-plan invite link (softened by recent-crew re-invites on the invite screen)
 - **Photo uploads in chat** — text only
 - **Affiliate revenue** — CTAs are wired and clicks are tracked; actual revenue requires applying to Uber Affiliate Program and OpenTable's affiliate program, then setting codes in `lib/affiliate.ts`

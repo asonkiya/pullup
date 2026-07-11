@@ -32,14 +32,8 @@ Same pattern as above — `activatePlan()` in `app/plan/[id]/index.tsx:118-126` 
 ### 4. Move location sharing into the root layout ✅ DONE
 `lib/locationSharing.ts` hook mounted in the root layout watches once for all active sessions and uploads points per session. Screens create/stop sessions and call `refreshLocationSharing()`. iOS still suspends the watch when backgrounded without background entitlements — true background tracking remains item #6.
 
-### 5. Face-off tiebreaker
-**Problem.** When multiple venues all hit the 60% auto-select threshold, `checkAutoSelect` in `app/plan/[id]/venues.tsx:133-154` locks the first one it sees. No tie-breaking.
-
-**Fix.** When two or more candidates are tied (or within 1 vote of each other) on a swipe that would trigger auto-lock, instead push the host to `app/plan/[id]/faceoff.tsx` (new) with the tied candidate IDs. UI: bracket-style side-by-side cards, host taps a winner, the winner gets the host-type `venue_selection_events` insert.
-
-**Files.** `app/plan/[id]/venues.tsx` (detection), `app/plan/[id]/faceoff.tsx` (new), `app/plan/[id]/_layout.tsx` (registration).
-
-**Gotcha.** Make sure only the host can resolve a tie — RLS policy `vse_insert` already enforces this for `selection_type='host'`.
+### 5. Face-off tiebreaker ✅ DONE
+`checkAutoSelect` compares all candidates' right-swipes; a clear leader locks, a genuine tie routes the host to `app/plan/[id]/faceoff.tsx` (VS bracket, tap the winner → host-type selection event). Non-host swipers trigger a host-only `venue_tie` push; plan detail shows a tie banner in the PLANNING state as the host's entry point.
 
 ### 6. Background location
 **Problem.** Today, sharing only works while the app is in the foreground. Useful upgrade for real-world hangout coordination.

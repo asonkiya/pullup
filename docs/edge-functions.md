@@ -173,6 +173,7 @@ Authorization: Bearer <access_token>
 | `chat_message` | All members except actor | `"{actor_name}: {message_body}"` (truncated to 100 chars) |
 | `crew_reinvite` | All members of the referenced (old) plan except actor | `"{actor_name} is planning another one — tap to join"` |
 | `crew_invited` | Explicit `recipient_user_ids` only | `"{actor_name} invited you — tap to join"` |
+| `venue_tie` | Host only | `"It's a tie! Two spots are equally loved — you pick the winner"` |
 
 The actor is always excluded from the recipient list. `member_joined` additionally filters to host only.
 
