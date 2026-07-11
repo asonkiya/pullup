@@ -7,7 +7,6 @@ import {
   ScrollView,
   Alert,
   SafeAreaView,
-  AppState,
   Dimensions,
 } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
@@ -15,12 +14,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
+import { refreshLocationSharing } from '@/lib/locationSharing';
 import {
   COLORS,
   SPACING,
   FONT_SIZE,
-  LOCATION_UPDATE_INTERVAL_MS,
-  LOCATION_DISTANCE_THRESHOLD_M,
   DEFAULT_SHARE_SESSION_HOURS,
   VENUE_PROVIDER,
 } from '@/constants';
@@ -50,12 +48,14 @@ export default function EtaDashboardScreen() {
   const [venueLng, setVenueLng] = useState<number | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
   const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
-  const locSub = useRef<Location.LocationSubscription | null>(null);
   const cameraRef = useRef<MapboxGL.Camera | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUid(user?.id ?? null));
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUid(user?.id ?? null);
+      if (user) restoreMySession(user.id);
+    });
     loadPlanData();
     fetchEta();
     fetchMemberLocations();
@@ -71,16 +71,27 @@ export default function EtaDashboardScreen() {
       })
       .subscribe();
 
-    const appListener = AppState.addEventListener('change', (next) => {
-      if (next === 'active' && sessionId) uploadCurrentLocation(sessionId);
-    });
-
     return () => {
       supabase.removeChannel(channel);
-      appListener.remove();
-      locSub.current?.remove();
     };
   }, [id]);
+
+  // Sharing persists app-wide (root layout hook), so returning to this
+  // screen must reflect an already-running session.
+  async function restoreMySession(userId: string) {
+    const { data } = await supabase
+      .from('location_share_sessions')
+      .select('id')
+      .eq('plan_id', id!)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    if (data) {
+      setSessionId(data.id);
+      setIsSharing(true);
+    }
+  }
 
   async function loadPlanData() {
     const { data: plan } = await supabase
@@ -233,13 +244,14 @@ export default function EtaDashboardScreen() {
     }
     setSessionId(session.id);
     setIsSharing(true);
-    startLocationWatch(session.id);
+    // Root-layout watcher takes over from here; push one point right away
+    // so friends see you before the first watch fix lands.
+    uploadCurrentLocation(session.id);
+    refreshLocationSharing();
     logEvent('eta_share_started', { planId: id! });
   }
 
   async function stopSharing() {
-    locSub.current?.remove();
-    locSub.current = null;
     if (sessionId) {
       await supabase
         .from('location_share_sessions')
@@ -248,27 +260,11 @@ export default function EtaDashboardScreen() {
     }
     setIsSharing(false);
     setSessionId(null);
-  }
-
-  function startLocationWatch(sid: string) {
-    Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: LOCATION_DISTANCE_THRESHOLD_M,
-        timeInterval: LOCATION_UPDATE_INTERVAL_MS,
-      },
-      (loc) => uploadPoint(sid, loc)
-    ).then((sub) => {
-      locSub.current = sub;
-    });
+    refreshLocationSharing();
   }
 
   async function uploadCurrentLocation(sid: string) {
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    uploadPoint(sid, loc);
-  }
-
-  async function uploadPoint(sid: string, loc: Location.LocationObject) {
     const { error } = await supabase.from('location_points').insert({
       session_id: sid,
       user_id: uid!,

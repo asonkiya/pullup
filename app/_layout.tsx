@@ -17,6 +17,7 @@ import {
 } from '@expo-google-fonts/outfit';
 import MapboxGL from '@rnmapbox/maps';
 import { supabase } from '@/lib/supabase';
+import { useLocationSharing } from '@/lib/locationSharing';
 import type { Session } from '@supabase/supabase-js';
 
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '');
@@ -129,6 +130,7 @@ export default function RootLayout() {
   }, [session]);
 
   useProtectedRoute(session, ready);
+  useLocationSharing(session?.user.id ?? null);
 
   if (!fontsLoaded) return null;
 
