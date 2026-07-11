@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  ActivityIndicator,
   Dimensions,
   Alert,
   Linking,
@@ -29,7 +28,7 @@ import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER } from '@/constants';
-import { NavHead, ProgressBar, AvatarRow } from '@/components/ui';
+import { NavHead, ProgressBar, AvatarRow, Skeleton } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
 import type { VenueCandidateRow } from '@/types/database';
 
@@ -289,8 +288,8 @@ export default function VenuesScreen() {
 
       <View style={styles.body}>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={COLORS.primary} size="large" />
+          <View style={styles.skeletonDeck}>
+            <Skeleton height={420} radius={24} />
             <Text style={styles.loadingText}>Finding spots nearby…</Text>
           </View>
         ) : error ? (
@@ -586,6 +585,7 @@ const styles = StyleSheet.create({
   likeBtn: { backgroundColor: COLORS.success, shadowColor: COLORS.success, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 6 },
 
   center: { alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.xl },
+  skeletonDeck: { width: '100%', alignItems: 'center', gap: SPACING.md, paddingHorizontal: SPACING.lg },
   loadingText: { fontSize: FONT_SIZE.md, fontFamily: FONTS.regular, color: COLORS.textSecondary, includeFontPadding: false },
   emptyTitle: { fontSize: FONT_SIZE.xl, fontFamily: FONTS.bold, color: COLORS.text, textAlign: 'center', includeFontPadding: false },
   emptySub:   { fontSize: FONT_SIZE.md, fontFamily: FONTS.regular, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22, includeFontPadding: false },

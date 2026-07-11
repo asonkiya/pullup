@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  ActivityIndicator,
   Image,
   Animated,
 } from 'react-native';
@@ -15,7 +14,7 @@ import { useRef } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { COLORS, FONTS, FONT_SIZE, SPACING, SHADOWS } from '@/constants';
-import { Avatar, AvatarRow, Card, Label, StatePill, VibeChip } from '@/components/ui';
+import { Avatar, AvatarRow, Card, Label, SkeletonList, StatePill, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
 
 type MemberPreview = { display_name: string };
@@ -132,7 +131,7 @@ export default function HomeScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} />
+        <SkeletonList />
       ) : plans.length === 0 ? (
         <ScrollView contentContainerStyle={styles.emptyScroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.emptyHeadline}>Make plans that{'\n'}actually happen.</Text>

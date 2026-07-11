@@ -7,7 +7,6 @@ import {
   ScrollView,
   Share,
   SafeAreaView,
-  ActivityIndicator,
   Alert,
   Image,
   Linking,
@@ -20,7 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, bookingUrl } from '@/lib/affiliate';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
-import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar } from '@/components/ui';
+import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
 
@@ -339,7 +338,7 @@ export default function PlanDetailScreen() {
 
   if (loading) return (
     <SafeAreaView style={styles.container}>
-      <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
+      <SkeletonList />
     </SafeAreaView>
   );
 
