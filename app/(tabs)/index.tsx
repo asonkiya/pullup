@@ -8,6 +8,8 @@ import {
   SafeAreaView,
   Image,
   Animated,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useRef } from 'react';
@@ -25,7 +27,49 @@ export default function HomeScreen() {
   const [myInitial, setMyInitial] = useState('?');
   const [loading, setLoading] = useState(true);
   const [pastExpanded, setPastExpanded] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
+  const [joinInput, setJoinInput] = useState('');
   const router = useRouter();
+
+  // Accepts a full pullup://join/TOKEN link, an exp:// dev link, or a raw code.
+  function submitJoinCode() {
+    const raw = joinInput.trim();
+    const match = raw.match(/join\/([A-Za-z0-9]+)/);
+    const token = (match ? match[1] : raw).trim();
+    if (!/^[a-z0-9]{6,12}$/i.test(token)) {
+      Alert.alert("That doesn't look right", 'Paste the invite link or just the code at the end of it.');
+      return;
+    }
+    setShowJoin(false);
+    setJoinInput('');
+    router.push(`/join/${token}`);
+  }
+
+  function renderJoinEntry() {
+    return showJoin ? (
+      <View style={styles.joinRow}>
+        <TextInput
+          style={styles.joinInput}
+          value={joinInput}
+          onChangeText={setJoinInput}
+          placeholder="Paste invite link or code"
+          placeholderTextColor={COLORS.textFaint}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          returnKeyType="go"
+          onSubmitEditing={submitJoinCode}
+        />
+        <TouchableOpacity onPress={submitJoinCode} style={styles.joinGo}>
+          <Text style={styles.joinGoText}>Join</Text>
+        </TouchableOpacity>
+      </View>
+    ) : (
+      <TouchableOpacity onPress={() => setShowJoin(true)} style={styles.joinLink}>
+        <Text style={styles.joinLinkText}>Have an invite link? Join with a code</Text>
+      </TouchableOpacity>
+    );
+  }
 
   // Live ticker dot pulse
   const dotScale = useRef(new Animated.Value(1)).current;
@@ -157,6 +201,8 @@ export default function HomeScreen() {
             <Feather name="plus" size={18} color="#fff" />
             <Text style={styles.emptyCtaText}>Start your first plan</Text>
           </TouchableOpacity>
+
+          {renderJoinEntry()}
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -292,6 +338,8 @@ export default function HomeScreen() {
               ))}
             </>
           )}
+
+          {renderJoinEntry()}
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -537,6 +585,46 @@ const styles = StyleSheet.create({
   },
   emptyCtaText: {
     fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.bold,
+    color: '#fff',
+    includeFontPadding: false,
+  },
+
+  // Join-with-code entry
+  joinLink: { alignItems: 'center', paddingVertical: SPACING.md },
+  joinLinkText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+    includeFontPadding: false,
+  },
+  joinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  joinInput: {
+    flex: 1,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.text,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    includeFontPadding: false,
+  },
+  joinGo: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 11,
+  },
+  joinGoText: {
+    fontSize: FONT_SIZE.sm,
     fontFamily: FONTS.bold,
     color: '#fff',
     includeFontPadding: false,
