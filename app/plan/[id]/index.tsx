@@ -242,6 +242,46 @@ export default function PlanDetailScreen() {
     ]);
   }
 
+  async function planAnother() {
+    if (!currentUserId || !plan) return;
+    const { data: newPlan, error } = await supabase
+      .from('plans')
+      .insert({
+        creator_user_id: currentUserId,
+        title: plan.title,
+        state: 'open',
+        travel_mode_default: plan.travel_mode_default,
+        vibe: plan.vibe,
+      })
+      .select()
+      .single();
+    if (error || !newPlan) {
+      Alert.alert('Could not create plan', error?.message ?? 'Try again.');
+      return;
+    }
+    await supabase.from('plan_members').insert({
+      plan_id: newPlan.id,
+      user_id: currentUserId,
+      role: 'host',
+      rsvp_status: 'going',
+    });
+
+    // RLS only lets people add themselves, so the crew re-joins via a
+    // push that deep-links straight to the new plan's join token.
+    const token = Math.random().toString(36).slice(2, 10);
+    await supabase.from('plan_invites').insert({
+      plan_id: newPlan.id,
+      token,
+      inviter_user_id: currentUserId,
+      status: 'pending',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    notifyMembers('crew_reinvite', { join_token: token });
+
+    logEvent('plan_created', { planId: newPlan.id, properties: { redo_of: id } });
+    router.push(`/plan/${newPlan.id}`);
+  }
+
   function openArrivalPicker() {
     const seed = plan?.arrival_time
       ? new Date(plan.arrival_time)
@@ -662,7 +702,7 @@ export default function PlanDetailScreen() {
         </Card>
 
         {plan.state === 'completed' && (
-          <HButton label="Plan another with this crew" variant="primary" size="lg" fullWidth onPress={() => router.push('/plan/create')} />
+          <HButton label="Plan another with this crew" variant="primary" size="lg" fullWidth onPress={planAnother} />
         )}
         <HButton label="View chat" variant="ghost" size="md" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
         <View style={{ flex: 1 }} />

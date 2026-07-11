@@ -96,8 +96,14 @@ export default function RootLayout() {
   // Handle notification taps → navigate to plan
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const planId = response.notification.request.content.data?.plan_id as string | undefined;
-      if (planId) router.push(`/plan/${planId}`);
+      const data = response.notification.request.content.data ?? {};
+      const joinToken = data.join_token as string | undefined;
+      const planId = data.plan_id as string | undefined;
+      if (joinToken) {
+        router.push(`/join/${joinToken}`);
+      } else if (planId) {
+        router.push(`/plan/${planId}`);
+      }
     });
     return () => sub.remove();
   }, []);

@@ -14,7 +14,8 @@ type NotifyEvent =
   | 'plan_cancelled'
   | 'leaving'
   | 'arrived'
-  | 'chat_message';
+  | 'chat_message'
+  | 'crew_reinvite';
 
 interface NotifyPayload {
   event: NotifyEvent;
@@ -25,6 +26,9 @@ interface NotifyPayload {
     plan_title: string;
     place_name?: string;
     message_body?: string;
+    // crew_reinvite: recipients are the OLD plan's members; tapping routes
+    // to /join/{join_token} for the new plan instead of the plan screen.
+    join_token?: string;
   };
 }
 
@@ -53,6 +57,8 @@ function buildMessage(payload: NotifyPayload): { title: string; body: string } {
       return { title: plan_title, body: `${actor_name} arrived!` };
     case 'chat_message':
       return { title: plan_title, body: `${actor_name}: ${(message_body ?? '').slice(0, 100)}` };
+    case 'crew_reinvite':
+      return { title: plan_title, body: `${actor_name} is planning another one — tap to join` };
     default:
       return { title: plan_title, body: 'New activity' };
   }
@@ -131,7 +137,9 @@ Deno.serve(async (req) => {
       title,
       body,
       sound: 'default' as const,
-      data: { plan_id },
+      data: payload.extra?.join_token
+        ? { plan_id, join_token: payload.extra.join_token }
+        : { plan_id },
     };
   });
 
