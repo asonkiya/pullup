@@ -3,12 +3,12 @@
 ## Demo account
 The app requires sign-in. Please use:
 
-- **Email:** `REPLACE_WITH_DEMO_EMAIL`
-- **Password:** `REPLACE_WITH_DEMO_PASSWORD`
+- **Email:** `demo@pullup.app`
+- **Password:** `PullUp2026!`
 
-(Create this by tapping "Create account" once in the app, then enter the same
-credentials here. If email confirmation is enabled on the backend, confirm the
-address before submitting so the reviewer can sign straight in.)
+(Seeded directly in the backend with a full demo world — live plan, locked
+plan, open plan with a venue deck — so the reviewer lands in a working app
+that matches the screenshots.)
 
 ## What the app does
 Pull Up is a group-planning app. A user creates a plan, invites friends, and the
