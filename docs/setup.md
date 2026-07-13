@@ -66,9 +66,7 @@ npx expo start --android
 
 ## Test account
 
-The login screen has pre-filled credentials for development:
-- **Email:** `dev@pullup.app`
-- **Password:** `password123`
+Create a real account by signing up in the app. If you need a shared dev account, ask the repo owner.
 
 ## Project structure
 
