@@ -132,7 +132,35 @@ Create or update `eas.json` in the project root:
 
 ---
 
-## 4. Build the Apps
+## 4. Environment Variables (critical)
+
+`.env` is gitignored, so EAS cloud builds never see it. Every `EXPO_PUBLIC_*`
+variable must exist in the EAS **production** environment or the store binary is
+bundled with `undefined` values — `createClient(undefined)` in `lib/supabase.ts`
+then throws at module load and the app crashes on launch (this is exactly what
+got build 1.0 (5) rejected by App Review).
+
+```bash
+# Push client-side vars from a filtered .env (never push DB passwords/secret tokens)
+grep '^EXPO_PUBLIC_' .env > /tmp/eas-public.env
+eas env:push production --path /tmp/eas-public.env --force
+
+# Verify before building
+eas env:list --environment production
+```
+
+Required in production: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
+`EXPO_PUBLIC_MAPBOX_TOKEN`, `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`,
+`EXPO_PUBLIC_VENUE_PROVIDER`, plus `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (native Mapbox pods).
+
+Sanity check after any production build, before submitting:
+
+```bash
+# The Supabase URL must appear in the Hermes bundle
+unzip -p build.ipa 'Payload/*/main.jsbundle' | strings | grep -c '<your-project-ref>.supabase.co'
+```
+
+## 5. Build the Apps
 
 ```bash
 # Log into EAS
@@ -149,9 +177,9 @@ Android builds produce an AAB (Android App Bundle) by default, which is what Goo
 
 ---
 
-## 5. Apple App Store Submission
+## 6. Apple App Store Submission
 
-### 5a. App Store Connect setup
+### 6a. App Store Connect setup
 
 1. Go to [App Store Connect](https://appstoreconnect.apple.com/)
 2. Create a new app: **My Apps → + → New App**
@@ -162,13 +190,13 @@ Android builds produce an AAB (Android App Bundle) by default, which is what Goo
    - Bundle ID: select the one matching `app.json`
    - SKU: `pullup-v1` (any unique string)
 
-### 5b. App information
+### 6b. App information
 
 - **Category**: Social Networking
 - **Content rights**: "This app does not contain third-party content"
 - **Age rating**: Fill out the questionnaire (likely 4+ or 12+ depending on content)
 
-### 5c. Privacy policy
+### 6c. Privacy policy
 
 Apple requires a privacy policy URL. It must cover:
 - What data you collect (location, email, phone, push tokens)
@@ -179,7 +207,7 @@ Apple requires a privacy policy URL. It must cover:
 
 Host this on a simple webpage (GitHub Pages, Notion public page, etc.).
 
-### 5d. App privacy (nutrition labels)
+### 6d. App privacy (nutrition labels)
 
 In App Store Connect, declare data collection:
 - **Location**: Used for app functionality (venue search, ETA)
@@ -187,7 +215,7 @@ In App Store Connect, declare data collection:
 - **Identifiers (user ID)**: Used for app functionality
 - **Usage data**: Used for analytics (if analytics_events is used)
 
-### 5e. Submit for review
+### 6e. Submit for review
 
 ```bash
 eas submit --platform ios --profile production
@@ -195,7 +223,7 @@ eas submit --platform ios --profile production
 
 Or upload manually via Transporter app on macOS.
 
-### 5f. Review notes
+### 6f. Review notes
 
 Provide Apple with:
 - A test account (email + password) that's already set up
@@ -214,25 +242,25 @@ Provide Apple with:
 
 ---
 
-## 6. Google Play Store Submission
+## 7. Google Play Store Submission
 
-### 6a. Google Play Console setup
+### 7a. Google Play Console setup
 
 1. Go to [Google Play Console](https://play.google.com/console/)
 2. **Create app** → fill in app name, language, app/game, free/paid
 
-### 6b. Store listing
+### 7b. Store listing
 
 - **Short description** (80 chars): "Plan meetups, pick venues, and track who's on the way"
 - **Full description** (4000 chars): Describe features — plan creation, venue swiping, group chat, ETA tracking
 - **Screenshots**: Upload phone screenshots (minimum 2)
 - **Feature graphic**: 1024×500 banner image
 
-### 6c. Content rating
+### 7c. Content rating
 
 Fill out the IARC questionnaire in **Policy → App content → Content rating**. Likely rated "Everyone" or "Teen".
 
-### 6d. Data safety
+### 7d. Data safety
 
 Declare in **Policy → App content → Data safety**:
 - Location data: collected, not shared with third parties, required for core functionality
@@ -240,7 +268,7 @@ Declare in **Policy → App content → Data safety**:
 - Name: collected for display to group members
 - Device identifiers: push notification tokens
 
-### 6e. Service account for automated submission
+### 7e. Service account for automated submission
 
 1. In Google Cloud Console, create a service account
 2. Grant it access to Google Play Developer API
@@ -248,7 +276,7 @@ Declare in **Policy → App content → Data safety**:
 4. Place it at `./google-play-service-account.json` (add to `.gitignore`)
 5. In Play Console, grant the service account "Release manager" permissions
 
-### 6f. Submit
+### 7f. Submit
 
 ```bash
 eas submit --platform android --profile production
@@ -258,7 +286,7 @@ Google review typically takes 1–3 days for new apps.
 
 ---
 
-## 7. Post-Launch
+## 8. Post-Launch
 
 ### OTA updates with expo-updates
 
@@ -300,7 +328,7 @@ eas build --platform all --profile production
 
 ---
 
-## 8. Timeline Estimate
+## 9. Timeline Estimate
 
 | Step | Time |
 |---|---|
@@ -316,7 +344,7 @@ First submissions may take longer due to back-and-forth with reviewers. Subseque
 
 ---
 
-## 9. TestFlight / Internal Testing (Recommended First)
+## 10. TestFlight / Internal Testing (Recommended First)
 
 Before going public, distribute to testers:
 
