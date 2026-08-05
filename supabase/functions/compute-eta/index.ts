@@ -10,6 +10,26 @@ type Provider = 'google' | 'mapbox';
 type Origin = { user_id: string; lat: number; lng: number };
 type EtaResult = { user_id: string; duration_seconds: number | null; distance_meters: number | null };
 
+// Server-side provider override — lets us route ETAs through the cheaper
+// provider without shipping a new app binary (clients still send `provider`).
+const ETA_PROVIDER = Deno.env.get('ETA_PROVIDER');
+
+// Reuse a snapshot instead of calling the routing API when it is younger than
+// FRESH_S, or when the sharer moved less than MOVE_M meters and the snapshot
+// is younger than STALE_S.
+const FRESH_S = 60;
+const STALE_S = 300;
+const MOVE_M = 150;
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, content-type' } });
@@ -33,6 +53,7 @@ Deno.serve(async (req) => {
   } catch {
     return new Response('Bad request', { status: 400 });
   }
+  if (ETA_PROVIDER === 'mapbox' || ETA_PROVIDER === 'google') provider = ETA_PROVIDER;
 
   const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -118,16 +139,37 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ computed: 0 }), { headers: { 'Content-Type': 'application/json' } });
   }
 
-  let results: EtaResult[];
-  try {
-    results = provider === 'mapbox'
-      ? await routeMapbox(origins, venue.lat, venue.lng, plan.travel_mode_default)
-      : await routeGoogle(origins, venue.lat, venue.lng, plan.travel_mode_default);
-  } catch (e) {
-    return new Response(`${provider} routing error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+  // Skip routing for sharers whose latest snapshot is still representative:
+  // fresh enough, same destination/mode, and they haven't moved meaningfully.
+  const { data: existing } = await adminClient
+    .from('eta_snapshots')
+    .select('user_id, destination_place_id, mode, computed_at, origin_lat, origin_lng')
+    .eq('plan_id', plan_id);
+  const byUser = new Map((existing ?? []).map((s) => [s.user_id, s]));
+  const nowMs = Date.now();
+  const staleOrigins = origins.filter((o) => {
+    const snap = byUser.get(o.user_id);
+    if (!snap || snap.destination_place_id !== plan.selected_place_id || snap.mode !== plan.travel_mode_default) return true;
+    if (snap.origin_lat == null || snap.origin_lng == null) return true;
+    const ageS = (nowMs - new Date(snap.computed_at).getTime()) / 1000;
+    if (ageS < FRESH_S) return false;
+    return ageS >= STALE_S || haversineMeters(o.lat, o.lng, snap.origin_lat, snap.origin_lng) >= MOVE_M;
+  });
+  const cached = origins.length - staleOrigins.length;
+
+  let results: EtaResult[] = [];
+  if (staleOrigins.length > 0) {
+    try {
+      results = provider === 'mapbox'
+        ? await routeMapbox(staleOrigins, venue.lat, venue.lng, plan.travel_mode_default)
+        : await routeGoogle(staleOrigins, venue.lat, venue.lng, plan.travel_mode_default);
+    } catch (e) {
+      return new Response(`${provider} routing error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+    }
   }
 
   const now = new Date().toISOString();
+  const originByUser = new Map(staleOrigins.map((o) => [o.user_id, o]));
   const snapshots = results.map((r) => ({
     plan_id,
     user_id: r.user_id,
@@ -137,19 +179,20 @@ Deno.serve(async (req) => {
     status: 'ok',
     mode: plan.travel_mode_default,
     computed_at: now,
+    origin_lat: originByUser.get(r.user_id)?.lat ?? null,
+    origin_lng: originByUser.get(r.user_id)?.lng ?? null,
   }));
 
   if (snapshots.length > 0) {
     await adminClient.from('eta_snapshots').upsert(snapshots, { onConflict: 'plan_id,user_id' });
+    await adminClient.channel(`eta-${plan_id}`).send({
+      type: 'broadcast',
+      event: 'eta_updated',
+      payload: { plan_id },
+    });
   }
 
-  await adminClient.channel(`eta-${plan_id}`).send({
-    type: 'broadcast',
-    event: 'eta_updated',
-    payload: { plan_id },
-  });
-
-  return new Response(JSON.stringify({ computed: snapshots.length, provider }), {
+  return new Response(JSON.stringify({ computed: snapshots.length, cached, provider }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

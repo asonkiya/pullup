@@ -40,6 +40,8 @@ const GOOGLE_VIBE_TYPES: Record<string, string[]> = {
 };
 const GOOGLE_FALLBACK_TYPES = ['restaurant', 'bar', 'cafe'];
 
+const CACHE_TTL_H = 24;
+
 const PRICE_LEVEL_MAP: Record<string, number | null> = {
   PRICE_LEVEL_FREE: 0,
   PRICE_LEVEL_INEXPENSIVE: 1,
@@ -101,17 +103,41 @@ Deno.serve(async (req) => {
     });
   }
 
-  let rows: VenueRow[];
-  try {
-    rows = provider === 'mapbox'
-      ? await searchMapbox(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default)
-      : await searchGoogle(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default);
-  } catch (e) {
-    return new Response(`${provider} search error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+  // Area cache: searches from the same ~1km cell with the same vibe/mode reuse
+  // stored results for CACHE_TTL_H hours instead of hitting the Places API.
+  const cacheKey = [provider, vibe ?? 'any', travel_mode_default, anchor_lat.toFixed(2), anchor_lng.toFixed(2)].join(':');
+  let rows: VenueRow[] | null = null;
+  let cacheHit = false;
+  const { data: cachedEntry } = await adminClient
+    .from('venue_search_cache')
+    .select('results, created_at')
+    .eq('cache_key', cacheKey)
+    .maybeSingle();
+  if (cachedEntry && Date.now() - new Date(cachedEntry.created_at).getTime() < CACHE_TTL_H * 3600_000) {
+    rows = (cachedEntry.results as Omit<VenueRow, 'plan_id'>[]).map((r) => ({ ...r, plan_id }));
+    cacheHit = true;
+  }
+
+  if (!rows) {
+    try {
+      rows = provider === 'mapbox'
+        ? await searchMapbox(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default)
+        : await searchGoogle(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default);
+    } catch (e) {
+      return new Response(`${provider} search error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+    }
+    if (rows.length > 0) {
+      await adminClient.from('venue_search_cache').upsert({
+        cache_key: cacheKey,
+        provider,
+        results: rows.map(({ plan_id: _omit, ...rest }) => rest),
+        created_at: new Date().toISOString(),
+      });
+    }
   }
 
   if (rows.length === 0) {
-    return new Response(JSON.stringify({ inserted: 0 }), {
+    return new Response(JSON.stringify({ inserted: 0, cache_hit: cacheHit }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -132,7 +158,7 @@ Deno.serve(async (req) => {
     return new Response(`DB error: ${upsertError.message}`, { status: 500 });
   }
 
-  return new Response(JSON.stringify({ inserted: data?.length ?? 0, provider }), {
+  return new Response(JSON.stringify({ inserted: data?.length ?? 0, provider, cache_hit: cacheHit }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
@@ -168,41 +194,24 @@ async function searchGoogle(
   const places: Array<Record<string, unknown>> = placesData.places ?? [];
   if (places.length === 0) return [];
 
-  // Routes API — Compute Route Matrix anchor → each venue
-  const travelMode = travel_mode_default === 'walk' ? 'WALK' : 'DRIVE';
-  const routesRes = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      'X-Goog-FieldMask': 'originIndex,destinationIndex,duration,status',
-    },
-    body: JSON.stringify({
-      origins: [{ waypoint: { location: { latLng: { latitude: anchor_lat, longitude: anchor_lng } } } }],
-      destinations: places.map((p) => ({
-        waypoint: {
-          location: {
-            latLng: {
-              latitude: (p.location as { latitude: number }).latitude,
-              longitude: (p.location as { longitude: number }).longitude,
-            },
-          },
-        },
-      })),
-      travelMode,
-      routingPreference: travelMode === 'DRIVE' ? 'TRAFFIC_AWARE' : undefined,
-    }),
-  });
-
+  // Per-venue ETAs via Mapbox Directions — Google's Route Matrix bills per
+  // element (~20 per search), while Mapbox's free tier absorbs this entirely.
+  const profile = travel_mode_default === 'walk' ? 'walking' : 'driving-traffic';
   const etaMap = new Map<number, number>();
-  if (routesRes.ok) {
-    const routesData: Array<{ destinationIndex: number; duration?: string; status?: { code: number } }> = await routesRes.json();
-    for (const el of routesData) {
-      if (el.duration && (!el.status || el.status.code === 0)) {
-        etaMap.set(el.destinationIndex, parseInt(el.duration));
-      }
+  await Promise.all(places.map(async (p, i) => {
+    try {
+      const loc = p.location as { latitude: number; longitude: number };
+      const coords = `${anchor_lng},${anchor_lat};${loc.longitude},${loc.latitude}`;
+      const params = new URLSearchParams({ access_token: MAPBOX_TOKEN, overview: 'false', steps: 'false' });
+      const res = await fetch(`https://api.mapbox.com/directions/v5/mapbox/${profile}/${coords}?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const duration = data.routes?.[0]?.duration as number | undefined;
+      if (duration != null) etaMap.set(i, Math.round(duration));
+    } catch {
+      // graceful degradation — venue still shows without an ETA
     }
-  }
+  }));
 
   return places.map((place, i) => {
     const photos = place.photos as Array<{ name: string }> | undefined;
