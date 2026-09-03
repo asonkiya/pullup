@@ -17,7 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { rideUrl, bookingUrl } from '@/lib/affiliate';
+import { rideUrl } from '@/lib/affiliate';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
@@ -340,17 +340,15 @@ export default function PlanDetailScreen() {
     if (status === 'leaving') router.push(`/plan/${id}/eta`);
   }
 
-  // High-intent commerce CTAs (book a table / get a ride). Opens the partner and
-  // records the click so we can measure conversion from plan → booking/ride.
-  function openCommerce(type: 'book' | 'ride', venue: { name: string; lat: number; lng: number }) {
+  // High-intent commerce CTA (get a ride). Opens the partner and records the
+  // click so we can measure conversion from plan → ride. "Book a table" was
+  // removed: Google doesn't expose the Maps reserve link, and an OpenTable
+  // name-search dead-ends outside its coverage — the Website button already
+  // serves booking intent.
+  function openCommerce(type: 'ride', venue: { name: string; lat: number; lng: number }) {
     logEvent('affiliate_click', { planId: id!, properties: { type, venue: venue.name } });
-    Linking.openURL(type === 'ride' ? rideUrl(venue) : bookingUrl(venue));
+    Linking.openURL(rideUrl(venue));
   }
-
-  // "Book a table" only makes sense for dining-type plans. Show it for dining
-  // vibes, or when no vibe is set (restaurant is the most common default).
-  const DINING_VIBES = ['Food', 'Drinks', 'Coffee', 'Party'];
-  const isDiningPlan = !plan?.vibe || DINING_VIBES.includes(plan.vibe);
 
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
   const myMember   = members.find(m => m.user_id === currentUserId);
@@ -524,15 +522,6 @@ export default function PlanDetailScreen() {
                   <HButton label="Website" variant="ghost" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.website_url!)} />
                 )}
               </View>
-              {venueDetails && isDiningPlan && (
-                <HButton
-                  label="Book a table"
-                  variant="tint"
-                  size="sm"
-                  fullWidth
-                  onPress={() => openCommerce('book', { name: venueDetails.name, lat: venueDetails.lat, lng: venueDetails.lng })}
-                />
-              )}
             </View>
           </Card>
 

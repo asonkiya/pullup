@@ -10,8 +10,6 @@
 export const AFFILIATE = {
   // Uber affiliate client_id (Uber Affiliate Program). Empty = plain deep link.
   uberClientId: '',
-  // OpenTable affiliate ref/click-wrapper. Empty = plain search link.
-  openTableRef: '',
 };
 
 export type Venue = {
@@ -31,15 +29,4 @@ export function rideUrl(venue: Venue): string {
   });
   if (AFFILIATE.uberClientId) params.set('client_id', AFFILIATE.uberClientId);
   return `https://m.uber.com/ul/?${params.toString()}`;
-}
-
-/** OpenTable search pre-filled with the venue name + location. */
-export function bookingUrl(venue: Venue): string {
-  const params = new URLSearchParams({
-    term: venue.name,
-    latitude: String(venue.lat),
-    longitude: String(venue.lng),
-  });
-  if (AFFILIATE.openTableRef) params.set('ref', AFFILIATE.openTableRef);
-  return `https://www.opentable.com/s?${params.toString()}`;
 }
