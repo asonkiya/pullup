@@ -116,10 +116,32 @@ Deno.serve(async (req) => {
     .from('location_share_sessions')
     .select('id, user_id')
     .eq('plan_id', plan_id)
-    .eq('status', 'active');
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString());
+
+  // Existing snapshots — used both to prune stopped sharers and as the cache.
+  const { data: existing } = await adminClient
+    .from('eta_snapshots')
+    .select('user_id, destination_place_id, mode, computed_at, origin_lat, origin_lng')
+    .eq('plan_id', plan_id);
+
+  // Prune snapshots for members who stopped sharing (or whose session
+  // expired) so their ETA doesn't stay frozen on everyone's screen.
+  const activeIds = new Set((sessions ?? []).map((s) => s.user_id));
+  const stoppedIds = (existing ?? []).filter((s) => !activeIds.has(s.user_id)).map((s) => s.user_id);
+  let removed = 0;
+  if (stoppedIds.length > 0) {
+    await adminClient.from('eta_snapshots').delete().eq('plan_id', plan_id).in('user_id', stoppedIds);
+    removed = stoppedIds.length;
+    await adminClient.channel(`eta-${plan_id}`).send({
+      type: 'broadcast',
+      event: 'eta_updated',
+      payload: { plan_id },
+    });
+  }
 
   if (!sessions || sessions.length === 0) {
-    return new Response(JSON.stringify({ computed: 0 }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ computed: 0, removed }), { headers: { 'Content-Type': 'application/json' } });
   }
 
   // Latest location point per session
@@ -136,15 +158,11 @@ Deno.serve(async (req) => {
   }
 
   if (origins.length === 0) {
-    return new Response(JSON.stringify({ computed: 0 }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ computed: 0, removed }), { headers: { 'Content-Type': 'application/json' } });
   }
 
   // Skip routing for sharers whose latest snapshot is still representative:
   // fresh enough, same destination/mode, and they haven't moved meaningfully.
-  const { data: existing } = await adminClient
-    .from('eta_snapshots')
-    .select('user_id, destination_place_id, mode, computed_at, origin_lat, origin_lng')
-    .eq('plan_id', plan_id);
   const byUser = new Map((existing ?? []).map((s) => [s.user_id, s]));
   const nowMs = Date.now();
   const staleOrigins = origins.filter((o) => {
@@ -192,7 +210,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  return new Response(JSON.stringify({ computed: snapshots.length, cached, provider }), {
+  return new Response(JSON.stringify({ computed: snapshots.length, cached, removed, provider }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

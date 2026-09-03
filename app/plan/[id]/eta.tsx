@@ -262,9 +262,15 @@ export default function EtaDashboardScreen() {
         .update({ status: 'stopped' as const, stopped_at: new Date().toISOString() })
         .eq('id', sessionId);
     }
+    // Drop our own ETA snapshot so it doesn't stay frozen on everyone's
+    // screen (compute-eta also prunes stopped sharers server-side).
+    if (uid) {
+      await supabase.from('eta_snapshots').delete().eq('plan_id', id!).eq('user_id', uid);
+    }
     setIsSharing(false);
     setSessionId(null);
     refreshLocationSharing();
+    fetchEta();
   }
 
   async function uploadCurrentLocation(sid: string) {
