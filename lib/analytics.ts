@@ -9,7 +9,8 @@ import { supabase } from './supabase';
  *   → departure_leaving → departure_arrived
  *
  * Monetization:
- *   affiliate_click — a high-intent click on a "Book a table" / "Get a ride" CTA
+ *   affiliate_click — a high-intent click on a "Get a ride" CTA
+ *   navigate_click — turn-by-turn handoff to Google Maps
  */
 export type AnalyticsEvent =
   | 'plan_created'
@@ -19,7 +20,8 @@ export type AnalyticsEvent =
   | 'eta_share_started'
   | 'departure_leaving'
   | 'departure_arrived'
-  | 'affiliate_click';
+  | 'affiliate_click'
+  | 'navigate_click';
 
 type LogOptions = {
   planId?: string | null;

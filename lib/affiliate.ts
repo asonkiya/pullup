@@ -18,6 +18,20 @@ export type Venue = {
   lng: number;
 };
 
+/**
+ * Google Maps turn-by-turn directions to the venue. Universal link: opens the
+ * Google Maps app when installed, falls back to the browser otherwise — no
+ * LSApplicationQueriesSchemes entry needed, so it works in the current build.
+ */
+export function directionsUrl(venue: Venue, travelMode?: string | null): string {
+  const params = new URLSearchParams({
+    api: '1',
+    destination: `${venue.lat},${venue.lng}`,
+    travelmode: travelMode === 'walk' ? 'walking' : 'driving',
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 /** Uber universal link with the venue as the dropoff. */
 export function rideUrl(venue: Venue): string {
   const params = new URLSearchParams({

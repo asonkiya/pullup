@@ -8,12 +8,14 @@ import {
   Alert,
   SafeAreaView,
   Dimensions,
+  Linking,
 } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
+import { directionsUrl } from '@/lib/affiliate';
 import { refreshLocationSharing } from '@/lib/locationSharing';
 import {
   COLORS,
@@ -47,6 +49,7 @@ export default function EtaDashboardScreen() {
   const [venueLat, setVenueLat] = useState<number | null>(null);
   const [venueLng, setVenueLng] = useState<number | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
+  const [travelMode, setTravelMode] = useState<string | null>(null);
   const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
   const cameraRef = useRef<MapboxGL.Camera | null>(null);
   const router = useRouter();
@@ -96,12 +99,13 @@ export default function EtaDashboardScreen() {
   async function loadPlanData() {
     const { data: plan } = await supabase
       .from('plans')
-      .select('title, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng')
+      .select('title, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng, travel_mode_default')
       .eq('id', id!)
       .single();
     if (!plan) return;
     setPlanName(plan.title);
     setVenueName(plan.selected_place_name);
+    setTravelMode(plan.travel_mode_default);
 
     // Coords live on the plan. Fall back to the venue candidate for older plans:
     // first by place_id, then via the latest selection event (stable row id).
@@ -367,6 +371,19 @@ export default function EtaDashboardScreen() {
           </View>
         )}
 
+        {/* Turn-by-turn handoff */}
+        {venueLat != null && venueLng != null && (
+          <TouchableOpacity
+            style={styles.navigateBtn}
+            onPress={() => {
+              logEvent('navigate_click', { planId: id!, properties: { travel_mode: travelMode ?? 'drive' } });
+              Linking.openURL(directionsUrl({ name: venueName ?? 'Destination', lat: venueLat, lng: venueLng }, travelMode));
+            }}
+          >
+            <Text style={styles.navigateBtnText}>Navigate with Google Maps</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ETA list */}
         {entries.length === 0 ? (
           <View style={styles.emptyState}>
@@ -464,6 +481,16 @@ const styles = StyleSheet.create({
   },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success },
   sharingText: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.success, fontWeight: '500' },
+  navigateBtn: {
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.xs,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  navigateBtnText: { fontSize: FONT_SIZE.sm, fontWeight: '700', color: COLORS.primary },
   stopText: { fontSize: FONT_SIZE.sm, fontWeight: '700', color: COLORS.error },
 
   list: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, gap: SPACING.sm },

@@ -17,7 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { rideUrl } from '@/lib/affiliate';
+import { rideUrl, directionsUrl } from '@/lib/affiliate';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
@@ -335,9 +335,26 @@ export default function PlanDetailScreen() {
     if (status === 'leaving') logEvent('departure_leaving', { planId: id! });
     if (status === 'arrived') logEvent('departure_arrived', { planId: id! });
     fetchAll();
-    // When you mark yourself as leaving, take you to the live map so you can
-    // share your ETA and see who else is on the way.
-    if (status === 'leaving') router.push(`/plan/${id}/eta`);
+    // When you mark yourself as leaving, land on the live map so ETA sharing
+    // can start, and offer turn-by-turn navigation on top. Sharing is
+    // foreground-only, so we always route through the ETA screen first.
+    if (status === 'leaving') {
+      router.push(`/plan/${id}/eta`);
+      const lat = plan?.selected_place_lat ?? venueDetails?.lat;
+      const lng = plan?.selected_place_lng ?? venueDetails?.lng;
+      if (lat != null && lng != null) {
+        Alert.alert("You're on your way!", 'Want turn-by-turn directions too?', [
+          { text: 'Stay on live map', style: 'cancel' },
+          {
+            text: 'Open Google Maps',
+            onPress: () => {
+              logEvent('navigate_click', { planId: id!, properties: { travel_mode: plan?.travel_mode_default ?? 'drive' } });
+              Linking.openURL(directionsUrl({ name: venueDetails?.name ?? 'Destination', lat, lng }, plan?.travel_mode_default));
+            },
+          },
+        ]);
+      }
+    }
   }
 
   // High-intent commerce CTA (get a ride). Opens the partner and records the
