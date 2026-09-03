@@ -262,10 +262,15 @@ export default function EtaDashboardScreen() {
         .update({ status: 'stopped' as const, stopped_at: new Date().toISOString() })
         .eq('id', sessionId);
     }
-    // Drop our own ETA snapshot so it doesn't stay frozen on everyone's
-    // screen (compute-eta also prunes stopped sharers server-side).
+    // Flag our own ETA snapshot so it reads "not sharing" on everyone's
+    // screen instead of freezing at the last value (a server cron does the
+    // same as a backstop).
     if (uid) {
-      await supabase.from('eta_snapshots').delete().eq('plan_id', id!).eq('user_id', uid);
+      await supabase
+        .from('eta_snapshots')
+        .update({ status: 'stopped', duration_seconds: null, distance_meters: null })
+        .eq('plan_id', id!)
+        .eq('user_id', uid);
     }
     setIsSharing(false);
     setSessionId(null);
@@ -411,10 +416,16 @@ export default function EtaDashboardScreen() {
                   <Text style={styles.etaMode}>{item.mode} · {fmtDist(item.distance_meters)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.etaDuration}>{fmtDuration(item.duration_seconds)}</Text>
-                  <Text style={styles.etaTime}>
-                    {new Date(item.computed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </Text>
+                  {item.status === 'stopped' ? (
+                    <Text style={styles.etaNotSharing}>Not sharing</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.etaDuration}>{fmtDuration(item.duration_seconds)}</Text>
+                      <Text style={styles.etaTime}>
+                        {new Date(item.computed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
             ))}
@@ -522,6 +533,7 @@ const styles = StyleSheet.create({
   etaMode: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   etaDuration: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.primary },
   etaTime: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  etaNotSharing: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.textSecondary },
   pin: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: '#fff' },
   venuePin: { width: 22, height: 22, borderRadius: 11, borderWidth: 3 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: SPACING.sm, paddingHorizontal: SPACING.xl },

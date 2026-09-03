@@ -119,19 +119,26 @@ Deno.serve(async (req) => {
     .eq('status', 'active')
     .gt('expires_at', new Date().toISOString());
 
-  // Existing snapshots — used both to prune stopped sharers and as the cache.
+  // Existing snapshots — used both to flag stopped sharers and as the cache.
   const { data: existing } = await adminClient
     .from('eta_snapshots')
-    .select('user_id, destination_place_id, mode, computed_at, origin_lat, origin_lng')
+    .select('user_id, destination_place_id, mode, status, computed_at, origin_lat, origin_lng')
     .eq('plan_id', plan_id);
 
-  // Prune snapshots for members who stopped sharing (or whose session
-  // expired) so their ETA doesn't stay frozen on everyone's screen.
+  // Mark snapshots for members who stopped sharing (or whose session expired)
+  // so their ETA reads "not sharing" instead of freezing at the last value.
+  // A pg_cron job does the same every minute as a movement-independent backstop.
   const activeIds = new Set((sessions ?? []).map((s) => s.user_id));
-  const stoppedIds = (existing ?? []).filter((s) => !activeIds.has(s.user_id)).map((s) => s.user_id);
+  const stoppedIds = (existing ?? [])
+    .filter((s) => s.status === 'ok' && !activeIds.has(s.user_id))
+    .map((s) => s.user_id);
   let removed = 0;
   if (stoppedIds.length > 0) {
-    await adminClient.from('eta_snapshots').delete().eq('plan_id', plan_id).in('user_id', stoppedIds);
+    await adminClient
+      .from('eta_snapshots')
+      .update({ status: 'stopped', duration_seconds: null, distance_meters: null })
+      .eq('plan_id', plan_id)
+      .in('user_id', stoppedIds);
     removed = stoppedIds.length;
     await adminClient.channel(`eta-${plan_id}`).send({
       type: 'broadcast',
@@ -167,7 +174,7 @@ Deno.serve(async (req) => {
   const nowMs = Date.now();
   const staleOrigins = origins.filter((o) => {
     const snap = byUser.get(o.user_id);
-    if (!snap || snap.destination_place_id !== plan.selected_place_id || snap.mode !== plan.travel_mode_default) return true;
+    if (!snap || snap.status !== 'ok' || snap.destination_place_id !== plan.selected_place_id || snap.mode !== plan.travel_mode_default) return true;
     if (snap.origin_lat == null || snap.origin_lng == null) return true;
     const ageS = (nowMs - new Date(snap.computed_at).getTime()) / 1000;
     if (ageS < FRESH_S) return false;
