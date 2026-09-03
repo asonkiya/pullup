@@ -28,6 +28,20 @@
 - [ ] Notification tap should deep-link to the relevant plan/chat (verify during
       testing where it currently lands).
 
+### UX from the 2-phone field test (2026-09-03)
+- [ ] **Anchor/area picking.** Today the search area is either an exact venue or
+      silent GPS-"near me" (venues screen writes anchor from current position).
+      Add an optional "Area" field on plan create + a "change area" control on
+      the venues screen — reuse PlacePicker autocomplete but write only
+      anchor_lat/lng, don't lock a venue.
+- [ ] **Chat peek tap.** The plan screen's latest-message row is coded as a
+      TouchableOpacity → chat (shipped in build 6) but reportedly doesn't
+      respond on device. Reproduce, check for a parent view swallowing touches
+      or a plan-state layout variant missing the touchable; add hitSlop.
+- [ ] **ETA widget on plan screen.** Replace the "Who's close" button with an
+      embedded compact ETA list (name + minutes) on the plan card; tapping it
+      opens the existing full map screen.
+
 ## Backend / ops
 - [ ] Supabase Pro before user acquisition (free project auto-paused twice;
       keepalive workflow is a stopgap — merge PR #2 to main to activate it).
