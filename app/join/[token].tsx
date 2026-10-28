@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, SafeAreaView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { setPendingRoute } from '@/lib/pendingRoute';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
@@ -19,7 +19,7 @@ export default function JoinScreen() {
     if (!tok) { setErrorMsg('Invalid invite link.'); setStatus('error'); return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      await SecureStore.setItemAsync('pending_join_token', tok);
+      await setPendingRoute(`/join/${tok}`);
       router.replace('/(auth)/login');
       return;
     }
@@ -33,10 +33,9 @@ export default function JoinScreen() {
       setStatus('error');
       return;
     }
-    const { plan_id: planId, joined } = data;
-    await SecureStore.deleteItemAsync('pending_join_token');
+    const { plan_id: planId, joined, invite_id, inviter_user_id } = data;
     if (joined) {
-      logEvent('plan_joined', { planId });
+      logEvent('plan_joined', { planId, properties: { source: 'link', invite_id, inviter_user_id } });
       const { data: userRow } = await supabase.from('users').select('display_name').eq('id', user.id).single();
       const { data: planRow } = await supabase.from('plans').select('title').eq('id', planId).single();
       supabase.functions.invoke('notify', {

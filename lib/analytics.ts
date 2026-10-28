@@ -8,6 +8,14 @@ import { supabase } from './supabase';
  *   plan_created → plan_joined → venue_locked → eta_share_started
  *   → departure_leaving → departure_arrived
  *
+ * Engagement / loop health:
+ *   app_open — throttled to once per 30 min of foreground
+ *   push_opened — notification tapped ({ event })
+ *   invite_shared — invite link shared or copied ({ method })
+ *   crew_invited — recent-crew member pinged from the invite screen
+ *   plan_state_changed — host started/ended/cancelled/reopened ({ from, to })
+ *   plan_joined carries { source: 'link' } and the inviter's id
+ *
  * Monetization:
  *   affiliate_click — a high-intent click on a "Get a ride" CTA
  *   navigate_click — turn-by-turn handoff to Google Maps
@@ -20,6 +28,11 @@ export type AnalyticsEvent =
   | 'eta_share_started'
   | 'departure_leaving'
   | 'departure_arrived'
+  | 'app_open'
+  | 'push_opened'
+  | 'invite_shared'
+  | 'crew_invited'
+  | 'plan_state_changed'
   | 'affiliate_click'
   | 'navigate_click';
 

@@ -118,6 +118,9 @@ export const LOCATION_UPDATE_INTERVAL_MS    = 90_000;
 export const LOCATION_DISTANCE_THRESHOLD_M  = 150;
 export const DEFAULT_SHARE_SESSION_HOURS    = 6;
 export const AUTO_SELECT_THRESHOLD          = 0.6;
+// A spot never auto-locks on fewer right swipes than this — otherwise a host
+// swiping before anyone joins (1/1 = 100%) locks the plan alone.
+export const AUTO_SELECT_MIN_VOTES         = 2;
 
 // ─── Provider toggle ──────────────────────────────────────────────────────────
 // Map rendering / live tracking always uses Mapbox (@rnmapbox/maps).

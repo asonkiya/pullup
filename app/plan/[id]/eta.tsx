@@ -9,7 +9,9 @@ import {
   SafeAreaView,
   Dimensions,
   Linking,
+  Switch,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapboxGL from '@rnmapbox/maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -27,6 +29,8 @@ import {
 import type { EtaSnapshotRow, UserRow } from '@/types/database';
 
 const CONSENT_VERSION = '1.0';
+// Remembered across plans: people who prefer ETA-only usually always do.
+const ETA_ONLY_PREF_KEY = 'share_eta_only';
 const MAP_HEIGHT = Dimensions.get('window').height * 0.38;
 
 type EtaEntry = EtaSnapshotRow & { users: UserRow };
@@ -43,6 +47,7 @@ export default function EtaDashboardScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [isSharing, setIsSharing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [etaOnly, setEtaOnly] = useState(false);
   const [entries, setEntries] = useState<EtaEntry[]>([]);
   const [planName, setPlanName] = useState('');
   const [uid, setUid] = useState<string | null>(null);
@@ -59,6 +64,9 @@ export default function EtaDashboardScreen() {
       setUid(user?.id ?? null);
       if (user) restoreMySession(user.id);
     });
+    AsyncStorage.getItem(ETA_ONLY_PREF_KEY)
+      .then((v) => { if (v === '1') setEtaOnly(true); })
+      .catch(() => {});
     loadPlanData();
     fetchEta();
     fetchMemberLocations();
@@ -84,7 +92,7 @@ export default function EtaDashboardScreen() {
   async function restoreMySession(userId: string) {
     const { data } = await supabase
       .from('location_share_sessions')
-      .select('id')
+      .select('id, eta_only')
       .eq('plan_id', id!)
       .eq('user_id', userId)
       .eq('status', 'active')
@@ -93,6 +101,25 @@ export default function EtaDashboardScreen() {
     if (data) {
       setSessionId(data.id);
       setIsSharing(true);
+      setEtaOnly(data.eta_only);
+    }
+  }
+
+  // Applies immediately to a running share; otherwise used when sharing starts.
+  async function changeEtaOnly(next: boolean) {
+    setEtaOnly(next);
+    AsyncStorage.setItem(ETA_ONLY_PREF_KEY, next ? '1' : '0').catch(() => {});
+    if (sessionId) {
+      const { error } = await supabase
+        .from('location_share_sessions')
+        .update({ eta_only: next })
+        .eq('id', sessionId);
+      if (error) {
+        setEtaOnly(!next);
+        Alert.alert('Could not update sharing', 'Try again.');
+        return;
+      }
+      fetchMemberLocations();
     }
   }
 
@@ -160,7 +187,7 @@ export default function EtaDashboardScreen() {
   async function fetchMemberLocations() {
     const { data: sessions } = await supabase
       .from('location_share_sessions')
-      .select('id, user_id, users(display_name)')
+      .select('id, user_id, eta_only, users(display_name)')
       .eq('plan_id', id!)
       .eq('status', 'active');
 
@@ -171,6 +198,9 @@ export default function EtaDashboardScreen() {
 
     const locations: MemberLocation[] = [];
     for (const session of sessions) {
+      // ETA-only sharers appear in the list below, not on the map. Your own
+      // dot comes from MapboxGL.UserLocation.
+      if (session.eta_only) continue;
       const { data: point } = await supabase
         .from('location_points')
         .select('lat, lng')
@@ -238,6 +268,7 @@ export default function EtaDashboardScreen() {
         expires_at: expiresAt,
         consent_version: CONSENT_VERSION,
         share_mode: 'foreground',
+        eta_only: etaOnly,
       })
       .select()
       .single();
@@ -252,7 +283,7 @@ export default function EtaDashboardScreen() {
     // so friends see you before the first watch fix lands.
     uploadCurrentLocation(session.id);
     refreshLocationSharing();
-    logEvent('eta_share_started', { planId: id! });
+    logEvent('eta_share_started', { planId: id!, properties: { eta_only: etaOnly } });
   }
 
   async function stopSharing() {
@@ -371,14 +402,46 @@ export default function EtaDashboardScreen() {
             <TouchableOpacity style={styles.shareBtn} onPress={startSharing}>
               <Text style={styles.shareBtnText}>Share ETA for this plan</Text>
             </TouchableOpacity>
+            <View style={styles.etaOnlyRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.etaOnlyLabel}>Show me on the map</Text>
+                <Text style={styles.etaOnlySub}>
+                  {etaOnly ? 'Crew sees only how far away you are.' : 'Crew sees your dot and your ETA.'}
+                </Text>
+              </View>
+              <Switch
+                value={!etaOnly}
+                onValueChange={(v) => changeEtaOnly(!v)}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+              />
+            </View>
           </View>
         ) : (
           <View style={styles.sharingBanner}>
             <View style={styles.dot} />
-            <Text style={styles.sharingText}>Sharing your location for this plan only</Text>
+            <Text style={styles.sharingText}>
+              {etaOnly ? 'Sharing your ETA only, for this plan' : 'Sharing your location for this plan only'}
+            </Text>
             <TouchableOpacity onPress={stopSharing}>
               <Text style={styles.stopText}>Stop</Text>
             </TouchableOpacity>
+          </View>
+        )}
+        {isSharing && (
+          <View style={[styles.consent, { paddingVertical: SPACING.sm }]}>
+            <View style={styles.etaOnlyRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.etaOnlyLabel}>Show me on the map</Text>
+                <Text style={styles.etaOnlySub}>
+                  {etaOnly ? 'Crew sees only how far away you are.' : 'Crew sees your dot and your ETA.'}
+                </Text>
+              </View>
+              <Switch
+                value={!etaOnly}
+                onValueChange={(v) => changeEtaOnly(!v)}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+              />
+            </View>
           </View>
         )}
 
@@ -483,6 +546,9 @@ const styles = StyleSheet.create({
   },
   consentTitle: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.text },
   consentBody: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary, lineHeight: 20 },
+  etaOnlyRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.xs },
+  etaOnlyLabel: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.text },
+  etaOnlySub: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary, marginTop: 2 },
   shareBtn: { backgroundColor: COLORS.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: SPACING.xs },
   shareBtnText: { color: '#fff', fontWeight: '700', fontSize: FONT_SIZE.md },
   sharingBanner: {

@@ -25,17 +25,28 @@ const VIBES = ['Food', 'Drinks', 'Party', 'Movie', 'Coffee', 'Gaming', 'Active']
 
 type WhenChip = 'tonight' | 'tomorrow' | 'weekend' | 'exact' | null;
 
+// Next half hour at least an hour out, for chips whose default time has passed.
+function soonSlot(now: Date): Date {
+  const d = new Date(now.getTime() + 60 * 60 * 1000);
+  d.setMinutes(d.getMinutes() < 30 ? 30 : 60, 0, 0);
+  return d;
+}
+
 function computeScheduled(when: WhenChip, exactDate: Date | null): string | null {
   if (when === 'exact') return exactDate?.toISOString() ?? null;
-  const d = new Date();
-  if (when === 'tonight')   { d.setHours(20, 0, 0, 0); return d.toISOString(); }
+  const now = new Date();
+  const d = new Date(now);
+  if (when === 'tonight') {
+    d.setHours(20, 0, 0, 0);
+    return (d > now ? d : soonSlot(now)).toISOString();
+  }
   if (when === 'tomorrow')  { d.setDate(d.getDate() + 1); d.setHours(19, 0, 0, 0); return d.toISOString(); }
   if (when === 'weekend') {
     const day = d.getDay();
-    const daysUntilSat = (6 - day + 7) % 7 || 7;
-    d.setDate(d.getDate() + daysUntilSat);
+    // Already the weekend: today. Otherwise the coming Saturday.
+    if (day !== 0 && day !== 6) d.setDate(d.getDate() + (6 - day));
     d.setHours(14, 0, 0, 0);
-    return d.toISOString();
+    return (d > now ? d : soonSlot(now)).toISOString();
   }
   return null;
 }

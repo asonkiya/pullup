@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Linking,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { hasPendingRoute } from '@/lib/pendingRoute';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
 
 export default function LoginScreen() {
@@ -19,6 +20,11 @@ export default function LoginScreen() {
   const [email, setEmail]     = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Arriving from an invite link almost always means a new user.
+  useEffect(() => {
+    hasPendingRoute().then((pending) => { if (pending) setMode('signup'); });
+  }, []);
 
   async function submit() {
     const e = email.trim().toLowerCase();
