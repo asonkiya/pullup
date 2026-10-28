@@ -178,13 +178,23 @@ grouping (E8; do it alongside workstream 3).
 | Day-of: voted → sharing ETA | 6–8 taps, 2 waits on the host | **1 tap** ("I'm leaving" from the reminder push) |
 | Plans reaching the recap | Almost none (manual end only) | **All** (auto-end) |
 
-## Open decisions
-- **Background location**: real-time ETAs while navigating need "Always"
-  permission, which means more App Review scrutiny and more privacy questions.
-  The alternative is to share "left at / ETA" once and refresh on app open.
-- **The guest web page**: host it on a custom domain (~$10/yr) or on GitHub
-  Pages. Is a name-only, no-account guest identity acceptable?
-- **The in-app chat**: keep it or make it secondary to the group chat (per the
-  research).
-- **Email confirmation**: check whether it's on in Supabase Auth; turning it off
-  removes a major drop-off point.
+## Decisions (2026-10-28)
+- **Background location: yes.** Without it, ETAs freeze the moment someone
+  navigates. Needs "Always" permission, a background task, a permission
+  explanation shown before the prompt, and a clear App Review note. Part of
+  build 7 (workstream 6). Sharing stays limited to the plan window and
+  auto-stops.
+- **Custom domain: yes.** A universal link needs
+  `/.well-known/apple-app-site-association` at the **domain root**. A GitHub
+  Pages project site (`asonkiya.github.io/pullup/...`) can't serve that, so the
+  domain is a requirement, not a nice-to-have. It also hosts the guest web page
+  and gives invites a trustworthy https link.
+- **Chat: keep it, but less prominent.** The group chat is primary. Drop the
+  chat preview from the top of the plan screen, keep "Chat" as a secondary
+  action, and group chat pushes (E8).
+- **Email confirmation: already off** (`mailer_autoconfirm: true`, checked
+  2026-10-28). Item B2 is resolved.
+- **Guest identity (proposed):** Supabase anonymous sign-ins (currently
+  disabled) give web guests a real session with just a name. `join_plan` and
+  the RLS rules then work unchanged, and the anonymous account can be upgraded
+  if the guest later installs the app.
