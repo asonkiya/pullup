@@ -28,6 +28,11 @@
 - [ ] Notification tap should deep-link to the relevant plan/chat (verify during
       testing where it currently lands).
 
+- [ ] Host mode (`plans.voting_enabled`, merged from main): apply migration
+      `20261028000000_add_voting_enabled` to prod before shipping any client
+      that selects the column. Test: swipe gestures still record votes for the
+      host in host mode — consider disabling the swipe deck there.
+
 ### UX from the 2-phone field test (2026-09-03)
 - [ ] **Anchor/area picking.** Today the search area is either an exact venue or
       silent GPS-"near me" (venues screen writes anchor from current position).
@@ -44,8 +49,8 @@
 
 ## Backend / ops
 - [ ] Supabase Pro before user acquisition (free project auto-paused twice;
-      keepalive workflow is a stopgap — merge PR #2 to main to activate it).
-- [ ] Merge PR #1 (dev-creds scrub), then rotate the old dev@pullup.app password.
+      keepalive workflow on main is a stopgap).
+- [ ] Rotate the old dev@pullup.app password (creds were scrubbed from docs in PR #1).
 - [ ] Security advisors (deferred until after review to protect signup trigger):
       SECURITY DEFINER functions (`handle_new_user`, `my_plan_ids`) publicly
       executable; duplicate permissive policies on users/plans/plan_invites;
