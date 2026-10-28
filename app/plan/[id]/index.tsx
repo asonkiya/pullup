@@ -193,10 +193,9 @@ export default function PlanDetailScreen() {
 
   async function shareInviteLink() {
     if (!currentUserId || !plan) return;
-    const token = Math.random().toString(36).slice(2, 10);
     const { data: invite } = await supabase
       .from('plan_invites')
-      .insert({ plan_id: id!, token, inviter_user_id: currentUserId, status: 'pending', expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+      .insert({ plan_id: id!, inviter_user_id: currentUserId, status: 'pending', expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
       .select().single();
     if (!invite) return;
     Share.share({ message: `Pull up with us: ${plan.title}\npullup://join/${invite.token}` });
@@ -289,15 +288,13 @@ export default function PlanDetailScreen() {
 
     // RLS only lets people add themselves, so the crew re-joins via a
     // push that deep-links straight to the new plan's join token.
-    const token = Math.random().toString(36).slice(2, 10);
-    await supabase.from('plan_invites').insert({
+    const { data: invite } = await supabase.from('plan_invites').insert({
       plan_id: newPlan.id,
-      token,
       inviter_user_id: currentUserId,
       status: 'pending',
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-    notifyMembers('crew_reinvite', { join_token: token });
+    }).select('token').single();
+    if (invite) notifyMembers('crew_reinvite', { join_token: invite.token });
 
     logEvent('plan_created', { planId: newPlan.id, properties: { redo_of: id } });
     router.push(`/plan/${newPlan.id}`);
