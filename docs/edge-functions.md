@@ -43,7 +43,10 @@ Searches for nearby venues based on the plan's vibe and location, then computes 
 POST /functions/v1/search-venues
 Authorization: Bearer <access_token>
 
-{ "plan_id": "uuid" }
+{
+  "plan_id": "uuid",
+  "provider": "google"   // optional — "google" (default) or "mapbox"
+}
 ```
 
 ### What it does
@@ -94,15 +97,21 @@ Computes ETAs from all members' current locations to the plan's selected destina
 POST /functions/v1/compute-eta
 Authorization: Bearer <access_token>
 
-{ "plan_id": "uuid" }
+{
+  "plan_id": "uuid",
+  "provider": "google"   // optional — "google" (default) or "mapbox"
+}
 ```
 
 ### What it does
 
-1. Fetches the plan's `selected_place_id` and `travel_mode_default`
+1. Resolves the plan destination via a 3-layer fallback (in order):
+   - `plans.selected_place_lat / selected_place_lng` — most reliable (set at lock time)
+   - `venue_candidates` row matching `plans.selected_place_id`
+   - Latest `venue_selection_events` row → join to `venue_candidates` (stable row ID, immune to place ID drift)
 2. Finds all active `location_share_sessions` for this plan
 3. Gets the latest `location_points` entry per session
-4. Calls **Google Routes `computeRouteMatrix`** with all member locations as origins and the destination as the single destination
+4. Calls **Google Routes `computeRouteMatrix`** (or Mapbox Directions API if `provider='mapbox'`) with all member locations as origins and the resolved destination
 5. Upserts results into `eta_snapshots` (conflict on `plan_id, user_id`)
 6. Broadcasts `eta_updated` event on the `eta-{plan_id}` Supabase Realtime channel
 
@@ -162,8 +171,15 @@ Authorization: Bearer <access_token>
 | `leaving` | All members except actor | `"{actor_name} is on the way!"` |
 | `arrived` | All members except actor | `"{actor_name} arrived!"` |
 | `chat_message` | All members except actor | `"{actor_name}: {message_body}"` (truncated to 100 chars) |
+| `crew_reinvite` | All members of the referenced (old) plan except actor | `"{actor_name} is planning another one — tap to join"` |
+| `crew_invited` | Explicit `recipient_user_ids` only | `"{actor_name} invited you — tap to join"` |
+| `venue_tie` | Host only | `"It's a tie! Two spots are equally loved — you pick the winner"` |
 
 The actor is always excluded from the recipient list. `member_joined` additionally filters to host only.
+
+**Targeting non-members:** pass `recipient_user_ids: string[]` at the top level of the payload to send to exactly those users instead of the plan's members (used to invite people who aren't in the plan yet).
+
+**Join deep links:** if `extra.join_token` is set, it's included in the push `data` payload; the app routes the tap to `/join/{join_token}` instead of the plan screen.
 
 ### What it does
 

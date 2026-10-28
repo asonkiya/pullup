@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>*{margin:0}</style></head>
+<body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6A5CE8"/>
+      <stop offset="1" stop-color="#5B4FE9"/>
+    </linearGradient>
+    <linearGradient id="t1" gradientUnits="userSpaceOnUse" x1="128" y1="812" x2="342" y2="726">
+      <stop offset="0" stop-color="#34D3AC" stop-opacity="0"/>
+      <stop offset="1" stop-color="#34D3AC"/>
+    </linearGradient>
+    <linearGradient id="t2" gradientUnits="userSpaceOnUse" x1="896" y1="812" x2="682" y2="726">
+      <stop offset="0" stop-color="#F2B75C" stop-opacity="0"/>
+      <stop offset="1" stop-color="#F2B75C"/>
+    </linearGradient>
+    <linearGradient id="t3" gradientUnits="userSpaceOnUse" x1="512" y1="960" x2="512" y2="856">
+      <stop offset="0" stop-color="#F58BBD" stop-opacity="0"/>
+      <stop offset="1" stop-color="#F58BBD"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- pin: big, white, bold -->
+  <g transform="translate(512 470)">
+    <path d="M0 -218 C -124 -218 -218 -124 -218 -6 C -218 96 -140 172 -62 238 C -30 264 -14 288 0 318 C 14 288 30 264 62 238 C 140 172 218 96 218 -6 C 218 -124 124 -218 0 -218 Z"
+          fill="#FFFFFF"/>
+    <!-- pin hole = upward chevron: "pull UP" -->
+    <path d="M -86 26 L 0 -64 L 86 26" fill="none" stroke="#5B4FE9" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- converging dots with motion trails -->
+  <g>
+    <path d="M 128 812 Q 260 800 342 726" stroke="url(#t1)" stroke-width="30" fill="none" stroke-linecap="round"/>
+    <circle cx="342" cy="726" r="52" fill="#34D3AC"/>
+    <circle cx="342" cy="726" r="52" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+
+    <path d="M 896 812 Q 764 800 682 726" stroke="url(#t2)" stroke-width="30" fill="none" stroke-linecap="round"/>
+    <circle cx="682" cy="726" r="52" fill="#F2B75C"/>
+    <circle cx="682" cy="726" r="52" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+
+    <path d="M 512 936 Q 512 890 512 856" stroke="url(#t3)" stroke-width="30" fill="none" stroke-linecap="round"/>
+    <circle cx="512" cy="826" r="52" fill="#F58BBD"/>
+    <circle cx="512" cy="826" r="52" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+  </g>
+</svg>
+</body></html>

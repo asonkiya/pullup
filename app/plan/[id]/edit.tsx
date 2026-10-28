@@ -140,8 +140,8 @@ export default function EditPlanScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.toggleLabel}>GROUP VOTING</Text>
                 <Text style={styles.toggleSub}>
-                  {votingEnabled 
-                    ? 'Crew swipes to vote, auto-locks at 60% agreement.' 
+                  {votingEnabled
+                    ? 'Crew swipes to vote, auto-locks at 60% agreement.'
                     : 'Host Mode: No voting. Only the host can select the destination.'}
                 </Text>
               </View>

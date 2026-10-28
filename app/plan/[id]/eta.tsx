@@ -7,20 +7,22 @@ import {
   ScrollView,
   Alert,
   SafeAreaView,
-  AppState,
   Dimensions,
+  Linking,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import MapboxGL from '@rnmapbox/maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
+import { directionsUrl } from '@/lib/affiliate';
+import { refreshLocationSharing } from '@/lib/locationSharing';
 import {
   COLORS,
   SPACING,
   FONT_SIZE,
-  LOCATION_UPDATE_INTERVAL_MS,
-  LOCATION_DISTANCE_THRESHOLD_M,
   DEFAULT_SHARE_SESSION_HOURS,
+  VENUE_PROVIDER,
 } from '@/constants';
 import type { EtaSnapshotRow, UserRow } from '@/types/database';
 
@@ -47,13 +49,16 @@ export default function EtaDashboardScreen() {
   const [venueLat, setVenueLat] = useState<number | null>(null);
   const [venueLng, setVenueLng] = useState<number | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
+  const [travelMode, setTravelMode] = useState<string | null>(null);
   const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
-  const locSub = useRef<Location.LocationSubscription | null>(null);
-  const mapRef = useRef<MapView | null>(null);
+  const cameraRef = useRef<MapboxGL.Camera | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUid(user?.id ?? null));
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUid(user?.id ?? null);
+      if (user) restoreMySession(user.id);
+    });
     loadPlanData();
     fetchEta();
     fetchMemberLocations();
@@ -69,37 +74,76 @@ export default function EtaDashboardScreen() {
       })
       .subscribe();
 
-    const appListener = AppState.addEventListener('change', (next) => {
-      if (next === 'active' && sessionId) uploadCurrentLocation(sessionId);
-    });
-
     return () => {
       supabase.removeChannel(channel);
-      appListener.remove();
-      locSub.current?.remove();
     };
   }, [id]);
+
+  // Sharing persists app-wide (root layout hook), so returning to this
+  // screen must reflect an already-running session.
+  async function restoreMySession(userId: string) {
+    const { data } = await supabase
+      .from('location_share_sessions')
+      .select('id')
+      .eq('plan_id', id!)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    if (data) {
+      setSessionId(data.id);
+      setIsSharing(true);
+    }
+  }
 
   async function loadPlanData() {
     const { data: plan } = await supabase
       .from('plans')
-      .select('title, selected_place_id, selected_place_name')
+      .select('title, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng, travel_mode_default')
       .eq('id', id!)
       .single();
     if (!plan) return;
     setPlanName(plan.title);
     setVenueName(plan.selected_place_name);
+    setTravelMode(plan.travel_mode_default);
 
-    if (plan.selected_place_id) {
-      const { data: venue } = await supabase
+    // Coords live on the plan. Fall back to the venue candidate for older plans:
+    // first by place_id, then via the latest selection event (stable row id).
+    if (plan.selected_place_lat != null && plan.selected_place_lng != null) {
+      setVenueLat(plan.selected_place_lat);
+      setVenueLng(plan.selected_place_lng);
+      return;
+    }
+    if (!plan.selected_place_id) return;
+
+    const { data: byPlace } = await supabase
+      .from('venue_candidates')
+      .select('lat, lng')
+      .eq('plan_id', id!)
+      .eq('place_id', plan.selected_place_id)
+      .maybeSingle();
+    if (byPlace) {
+      setVenueLat(byPlace.lat);
+      setVenueLng(byPlace.lng);
+      return;
+    }
+
+    const { data: sel } = await supabase
+      .from('venue_selection_events')
+      .select('venue_candidate_id')
+      .eq('plan_id', id!)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (sel?.venue_candidate_id) {
+      const { data: byId } = await supabase
         .from('venue_candidates')
         .select('lat, lng')
-        .eq('plan_id', id!)
-        .eq('google_place_id', plan.selected_place_id)
-        .single();
-      if (venue) {
-        setVenueLat(venue.lat);
-        setVenueLng(venue.lng);
+        .eq('id', sel.venue_candidate_id)
+        .maybeSingle();
+      if (byId) {
+        setVenueLat(byId.lat);
+        setVenueLng(byId.lng);
       }
     }
   }
@@ -148,31 +192,29 @@ export default function EtaDashboardScreen() {
   }
 
   function fitMapToMarkers() {
-    const coords: { latitude: number; longitude: number }[] = [];
-    if (venueLat != null && venueLng != null) {
-      coords.push({ latitude: venueLat, longitude: venueLng });
+    const coords: [number, number][] = [];
+    if (venueLat != null && venueLng != null) coords.push([venueLng, venueLat]);
+    for (const m of memberLocations) coords.push([m.lng, m.lat]);
+    if (coords.length === 0) return;
+    if (coords.length === 1) {
+      cameraRef.current?.flyTo(coords[0], 400);
+      return;
     }
-    for (const m of memberLocations) {
-      coords.push({ latitude: m.lat, longitude: m.lng });
-    }
-    if (coords.length > 0 && mapRef.current) {
-      mapRef.current.fitToCoordinates(coords, {
-        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
-        animated: true,
-      });
-    }
+    const lngs = coords.map(c => c[0]);
+    const lats = coords.map(c => c[1]);
+    cameraRef.current?.fitBounds(
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [60, 60, 60, 60],
+      400,
+    );
   }
 
   useEffect(() => {
     fitMapToMarkers();
   }, [venueLat, venueLng, memberLocations]);
 
-  const defaultRegion: Region = {
-    latitude: venueLat ?? 37.78,
-    longitude: venueLng ?? -122.43,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  };
+  const defaultCenter: [number, number] = [venueLng ?? -122.43, venueLat ?? 37.78];
 
   async function startSharing() {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -206,41 +248,38 @@ export default function EtaDashboardScreen() {
     }
     setSessionId(session.id);
     setIsSharing(true);
-    startLocationWatch(session.id);
+    // Root-layout watcher takes over from here; push one point right away
+    // so friends see you before the first watch fix lands.
+    uploadCurrentLocation(session.id);
+    refreshLocationSharing();
+    logEvent('eta_share_started', { planId: id! });
   }
 
   async function stopSharing() {
-    locSub.current?.remove();
-    locSub.current = null;
     if (sessionId) {
       await supabase
         .from('location_share_sessions')
         .update({ status: 'stopped' as const, stopped_at: new Date().toISOString() })
         .eq('id', sessionId);
     }
+    // Flag our own ETA snapshot so it reads "not sharing" on everyone's
+    // screen instead of freezing at the last value (a server cron does the
+    // same as a backstop).
+    if (uid) {
+      await supabase
+        .from('eta_snapshots')
+        .update({ status: 'stopped', duration_seconds: null, distance_meters: null })
+        .eq('plan_id', id!)
+        .eq('user_id', uid);
+    }
     setIsSharing(false);
     setSessionId(null);
-  }
-
-  function startLocationWatch(sid: string) {
-    Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: LOCATION_DISTANCE_THRESHOLD_M,
-        timeInterval: LOCATION_UPDATE_INTERVAL_MS,
-      },
-      (loc) => uploadPoint(sid, loc)
-    ).then((sub) => {
-      locSub.current = sub;
-    });
+    refreshLocationSharing();
+    fetchEta();
   }
 
   async function uploadCurrentLocation(sid: string) {
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    uploadPoint(sid, loc);
-  }
-
-  async function uploadPoint(sid: string, loc: Location.LocationObject) {
     const { error } = await supabase.from('location_points').insert({
       session_id: sid,
       user_id: uid!,
@@ -254,7 +293,7 @@ export default function EtaDashboardScreen() {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (!session) return;
         supabase.functions.invoke('compute-eta', {
-          body: { plan_id: id! },
+          body: { plan_id: id!, provider: VENUE_PROVIDER },
           headers: { Authorization: `Bearer ${session.access_token}` },
         }).catch(() => {});
       });
@@ -294,29 +333,20 @@ export default function EtaDashboardScreen() {
         {/* Map */}
         {hasMapContent && (
           <View style={styles.mapContainer}>
-            <MapView
-              ref={mapRef}
-              style={styles.map}
-              initialRegion={defaultRegion}
-              showsUserLocation
-              showsMyLocationButton={false}
-            >
+            <MapboxGL.MapView style={styles.map} logoEnabled={false} attributionEnabled={false}>
+              <MapboxGL.Camera ref={cameraRef} centerCoordinate={defaultCenter} zoomLevel={13} />
+              <MapboxGL.UserLocation visible={isSharing} />
               {venueLat != null && venueLng != null && (
-                <Marker
-                  coordinate={{ latitude: venueLat, longitude: venueLng }}
-                  title={venueName ?? 'Destination'}
-                  pinColor={COLORS.error}
-                />
+                <MapboxGL.MarkerView coordinate={[venueLng, venueLat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+                  <View style={[styles.pin, styles.venuePin, { backgroundColor: COLORS.error }]} />
+                </MapboxGL.MarkerView>
               )}
               {memberLocations.map((m, i) => (
-                <Marker
-                  key={m.user_id}
-                  coordinate={{ latitude: m.lat, longitude: m.lng }}
-                  title={m.display_name}
-                  pinColor={MEMBER_COLORS[i % MEMBER_COLORS.length]}
-                />
+                <MapboxGL.MarkerView key={m.user_id} coordinate={[m.lng, m.lat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+                  <View style={[styles.pin, { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]} />
+                </MapboxGL.MarkerView>
               ))}
-            </MapView>
+            </MapboxGL.MapView>
             {memberLocations.length > 0 && (
               <View style={styles.legend}>
                 {memberLocations.map((m, i) => (
@@ -352,6 +382,19 @@ export default function EtaDashboardScreen() {
           </View>
         )}
 
+        {/* Turn-by-turn handoff */}
+        {venueLat != null && venueLng != null && (
+          <TouchableOpacity
+            style={styles.navigateBtn}
+            onPress={() => {
+              logEvent('navigate_click', { planId: id!, properties: { travel_mode: travelMode ?? 'drive' } });
+              Linking.openURL(directionsUrl({ name: venueName ?? 'Destination', lat: venueLat, lng: venueLng }, travelMode));
+            }}
+          >
+            <Text style={styles.navigateBtnText}>Navigate with Google Maps</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ETA list */}
         {entries.length === 0 ? (
           <View style={styles.emptyState}>
@@ -373,10 +416,16 @@ export default function EtaDashboardScreen() {
                   <Text style={styles.etaMode}>{item.mode} · {fmtDist(item.distance_meters)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.etaDuration}>{fmtDuration(item.duration_seconds)}</Text>
-                  <Text style={styles.etaTime}>
-                    {new Date(item.computed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </Text>
+                  {item.status === 'stopped' ? (
+                    <Text style={styles.etaNotSharing}>Not sharing</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.etaDuration}>{fmtDuration(item.duration_seconds)}</Text>
+                      <Text style={styles.etaTime}>
+                        {new Date(item.computed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
             ))}
@@ -449,6 +498,16 @@ const styles = StyleSheet.create({
   },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success },
   sharingText: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.success, fontWeight: '500' },
+  navigateBtn: {
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.xs,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  navigateBtnText: { fontSize: FONT_SIZE.sm, fontWeight: '700', color: COLORS.primary },
   stopText: { fontSize: FONT_SIZE.sm, fontWeight: '700', color: COLORS.error },
 
   list: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, gap: SPACING.sm },
@@ -474,6 +533,9 @@ const styles = StyleSheet.create({
   etaMode: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   etaDuration: { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.primary },
   etaTime: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  etaNotSharing: { fontSize: FONT_SIZE.sm, fontWeight: '600', color: COLORS.textSecondary },
+  pin: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: '#fff' },
+  venuePin: { width: 22, height: 22, borderRadius: 11, borderWidth: 3 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: SPACING.sm, paddingHorizontal: SPACING.xl },
   emptyTitle: { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
   emptySub: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },

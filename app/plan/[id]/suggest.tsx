@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING } from '@/constants';
 import { NavHead, HButton } from '@/components/ui';
 import { PlacePicker, type PickedPlace } from '@/components/PlacePicker';
@@ -46,7 +47,8 @@ export default function SuggestScreen() {
       .from('venue_candidates')
       .insert({
         plan_id: id!,
-        google_place_id: place.google_place_id,
+        place_id: place.place_id,
+        provider: place.provider,
         name: place.name,
         lat: place.lat,
         lng: place.lng,
@@ -80,6 +82,7 @@ export default function SuggestScreen() {
         extra: { actor_name: myName, plan_title: planTitle, place_name: place.name },
       },
     });
+    logEvent('venue_suggested', { planId: id!, properties: { provider: place.provider } });
 
     setSubmitting(false);
     router.back();

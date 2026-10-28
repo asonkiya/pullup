@@ -118,3 +118,11 @@ export const LOCATION_UPDATE_INTERVAL_MS    = 90_000;
 export const LOCATION_DISTANCE_THRESHOLD_M  = 150;
 export const DEFAULT_SHARE_SESSION_HOURS    = 6;
 export const AUTO_SELECT_THRESHOLD          = 0.6;
+
+// ─── Provider toggle ──────────────────────────────────────────────────────────
+// Map rendering / live tracking always uses Mapbox (@rnmapbox/maps).
+// Venue search, place autocomplete, photos, and ETA routing switch between
+// Google (richer venue data + photos) and Mapbox (cheaper) via this flag.
+export type VenueProvider = 'google' | 'mapbox';
+export const VENUE_PROVIDER: VenueProvider =
+  (process.env.EXPO_PUBLIC_VENUE_PROVIDER as VenueProvider) === 'mapbox' ? 'mapbox' : 'google';

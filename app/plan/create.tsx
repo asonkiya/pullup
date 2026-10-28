@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 import { NavHead, VibeChip } from '@/components/ui';
 import { PlacePicker, type PickedPlace } from '@/components/PlacePicker';
@@ -67,8 +68,10 @@ export default function CreatePlanScreen() {
         scheduled_for: scheduledFor,
         travel_mode_default: 'drive',
         vibe: vibe || null,
-        selected_place_id: place?.google_place_id ?? null,
+        selected_place_id: place?.place_id ?? null,
         selected_place_name: place?.name ?? null,
+        selected_place_lat: place?.lat ?? null,
+        selected_place_lng: place?.lng ?? null,
         anchor_lat: place?.lat ?? null,
         anchor_lng: place?.lng ?? null,
         voting_enabled: votingEnabled,
@@ -89,12 +92,16 @@ export default function CreatePlanScreen() {
       rsvp_status: 'going',
     });
 
+    logEvent('plan_created', { planId: plan.id, properties: { vibe: vibe || null, has_venue: !!place } });
+
     if (place) {
+      logEvent('venue_locked', { planId: plan.id, properties: { source: 'host_picked', provider: place.provider } });
       const { data: candidate } = await supabase
         .from('venue_candidates')
         .insert({
           plan_id: plan.id,
-          google_place_id: place.google_place_id,
+          place_id: place.place_id,
+          provider: place.provider,
           name: place.name,
           lat: place.lat,
           lng: place.lng,
@@ -233,8 +240,8 @@ export default function CreatePlanScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.toggleLabel}>GROUP VOTING</Text>
                 <Text style={styles.toggleSub}>
-                  {votingEnabled 
-                    ? 'Crew swipes to vote, auto-locks at 60% agreement.' 
+                  {votingEnabled
+                    ? 'Crew swipes to vote, auto-locks at 60% agreement.'
                     : 'Host Mode: No voting. Only the host can select the destination.'}
                 </Text>
               </View>

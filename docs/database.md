@@ -52,8 +52,10 @@ A plan with its lifecycle state and venue selection.
 | `scheduled_for` | timestamptz | Nullable — when the hangout is planned |
 | `anchor_lat` | double precision | Nullable — user's location when searching venues |
 | `anchor_lng` | double precision | Nullable |
-| `selected_place_id` | text | Google Place ID, set when venue is locked (cleared on re-open) |
+| `selected_place_id` | text | Provider-specific place ID, set when venue is locked (cleared on re-open) |
 | `selected_place_name` | text | Display name of selected venue |
+| `selected_place_lat` | double precision | Nullable — destination latitude, stored at lock time for fast lookups |
+| `selected_place_lng` | double precision | Nullable — destination longitude, stored at lock time |
 | `travel_mode_default` | travel_mode | Default `drive` |
 | `vibe` | text | Nullable — maps to venue types (Food, Drinks, Coffee, etc.) |
 | `arrival_time` | timestamptz | Nullable — "be there by" time set in LOCKED state |
@@ -114,7 +116,8 @@ Venues that may be selected as the destination for a plan. Populated from three 
 |---|---|---|
 | `id` | uuid PK | Auto-generated |
 | `plan_id` | uuid FK | References `plans(id)` ON DELETE CASCADE |
-| `google_place_id` | text | Real Google Place ID, or synthetic `suggestion:{uuid}` for custom venues |
+| `place_id` | text | Provider-specific place ID. Real ID from Google/Mapbox, or synthetic `suggestion:{uuid}` for custom venues |
+| `provider` | text | `google` (default) or `mapbox` — which API produced this candidate |
 | `name` | text | Display name |
 | `lat` / `lng` | double precision | Coordinates |
 | `price_level` | smallint | 0–4, nullable |
@@ -122,16 +125,16 @@ Venues that may be selected as the destination for a plan. Populated from three 
 | `category` | text | e.g. "Restaurant", "Bar" |
 | `source` | text | `nearby_search` (default), `host_picked`, or `suggestion` |
 | `eta_seconds` | integer | Travel time from anchor, nullable |
-| `photo_urls` | jsonb | Array of Google Places photo URLs, nullable |
+| `photo_urls` | jsonb | Array of photo URLs, nullable |
 | `address` | text | Short formatted address, nullable |
 | `website_url` | text | Venue website, nullable |
-| `maps_url` | text | Google Maps deep link, nullable |
+| `maps_url` | text | Maps deep link, nullable |
 | `user_rating_count` | integer | Number of Google ratings, nullable |
 | `is_open` | boolean | Current open status from Places API, nullable |
 | `suggested_by_user_id` | uuid FK | References `users(id)` ON DELETE SET NULL. Populated only when `source = 'suggestion'` |
 | `created_at` | timestamptz | Default `now()` |
 
-**Constraints:** `UNIQUE (plan_id, google_place_id)`
+**Constraints:** `UNIQUE (plan_id, place_id)` — one row per provider ID per plan
 
 **Indexes:**
 - `(plan_id, suggested_by_user_id)` — supports joining suggester display names
@@ -250,7 +253,7 @@ Group chat messages within a plan.
 
 ### `analytics_events`
 
-Generic event tracking (not currently wired into the UI; kept for future instrumentation).
+Funnel and monetization event tracking, written by `lib/analytics.ts` (fire-and-forget — never blocks the UI).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -305,3 +308,6 @@ So `delete from public.plans;` is a clean wipe of all plan data while leaving `u
 | `20260611160342_venue_rich_data.sql` | Add `photo_urls`, `address`, `website_url`, `maps_url`, `user_rating_count`, `is_open` to venue_candidates |
 | `20260612030000_venue_suggestions.sql` | Add `suggested_by_user_id` to venue_candidates + index |
 | `20260612040000_location_points_co_member_select.sql` | Replace `lp_select_own` with `lp_select_co_member` (unlocks live friend tracking) |
+| `20260624082429_rename_google_place_id_to_mapbox_id.sql` | Renamed `google_place_id` column (intermediate rename, superseded below) |
+| `20260625041146_toggle_place_provider.sql` | Renamed column to `place_id` (generic); added `provider text not null default 'google'`; updated unique constraint |
+| `20260625043103_add_plan_destination_coords.sql` | Added `selected_place_lat`, `selected_place_lng` to `plans`; backfilled from `venue_candidates` |

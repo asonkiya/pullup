@@ -1,6 +1,6 @@
 import { useRef, useEffect, forwardRef } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import { View, Text, StyleSheet } from 'react-native';
+import MapboxGL from '@rnmapbox/maps';
 import { Feather } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui';
 import { COLORS, FONTS, SHADOWS } from '@/constants';
@@ -28,52 +28,59 @@ const DOT_COLOR: Record<DepartureStatus, string> = {
   arrived:  COLORS.successDeep,
 };
 
-export const LiveMap = forwardRef<MapView, Props>(function LiveMap({ destination, members, style }, ref) {
-  const localRef = useRef<MapView | null>(null);
-  const mapRef = (ref as React.MutableRefObject<MapView | null>) ?? localRef;
-
-  const initialRegion: Region = {
-    latitude:  destination?.lat ?? 37.78,
-    longitude: destination?.lng ?? -122.43,
-    latitudeDelta: 0.04,
-    longitudeDelta: 0.04,
-  };
+export const LiveMap = forwardRef<MapboxGL.Camera, Props>(function LiveMap({ destination, members, style }, ref) {
+  const cameraRef = useRef<MapboxGL.Camera | null>(null);
 
   useEffect(() => {
-    const coords: { latitude: number; longitude: number }[] = [];
-    if (destination) coords.push({ latitude: destination.lat, longitude: destination.lng });
-    for (const m of members) coords.push({ latitude: m.lat, longitude: m.lng });
-    if (coords.length > 0 && mapRef.current) {
-      // Small delay to let map finish initial layout on iOS
-      const t = setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coords, {
-          edgePadding: { top: 60, right: 60, bottom: 80, left: 60 },
-          animated: true,
-        });
-      }, 250);
-      return () => clearTimeout(t);
-    }
+    const coords: [number, number][] = [];
+    if (destination) coords.push([destination.lng, destination.lat]);
+    for (const m of members) coords.push([m.lng, m.lat]);
+    if (coords.length === 0) return;
+
+    const t = setTimeout(() => {
+      if (coords.length === 1) {
+        cameraRef.current?.flyTo(coords[0], 400);
+        return;
+      }
+      const lngs = coords.map(c => c[0]);
+      const lats = coords.map(c => c[1]);
+      const ne: [number, number] = [Math.max(...lngs), Math.max(...lats)];
+      const sw: [number, number] = [Math.min(...lngs), Math.min(...lats)];
+      cameraRef.current?.fitBounds(ne, sw, [80, 60, 100, 60], 400);
+    }, 250);
+    return () => clearTimeout(t);
   }, [destination?.lat, destination?.lng, members.map(m => `${m.user_id}:${m.lat}:${m.lng}`).join('|')]);
 
+  const center: [number, number] = destination
+    ? [destination.lng, destination.lat]
+    : [-122.43, 37.78];
+
   return (
-    <MapView ref={mapRef} style={[styles.map, style]} initialRegion={initialRegion}>
+    <MapboxGL.MapView style={[styles.map, style]} logoEnabled={false} attributionEnabled={false}>
+      <MapboxGL.Camera
+        ref={(r) => {
+          cameraRef.current = r;
+          if (typeof ref === 'function') ref(r);
+          else if (ref) (ref as React.MutableRefObject<MapboxGL.Camera | null>).current = r;
+        }}
+        centerCoordinate={center}
+        zoomLevel={13}
+      />
+
       {destination && (
-        <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} title={destination.name} anchor={{ x: 0.5, y: 0.5 }}>
+        <MapboxGL.MarkerView
+          coordinate={[destination.lng, destination.lat]}
+          anchor={{ x: 0.5, y: 0.5 }}
+          allowOverlap
+        >
           <View style={styles.dest}>
             <Feather name="map-pin" size={18} color="#fff" strokeWidth={2.4} />
           </View>
-        </Marker>
+        </MapboxGL.MarkerView>
       )}
 
       {members.map((m) => (
-        <Marker
-          key={m.user_id}
-          coordinate={{ latitude: m.lat, longitude: m.lng }}
-          title={m.display_name}
-          description={m.eta_minutes != null ? `${m.eta_minutes} min away` : undefined}
-          anchor={{ x: 0.5, y: 0.5 }}
-          tracksViewChanges={Platform.OS === 'ios'}
-        >
+        <MapboxGL.MarkerView key={m.user_id} coordinate={[m.lng, m.lat]} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
           <View style={styles.memberWrap}>
             <Avatar name={m.display_name} index={m.index} size={34} ring />
             <View style={[styles.statusDot, { backgroundColor: DOT_COLOR[m.departure_status] }]} />
@@ -83,9 +90,9 @@ export const LiveMap = forwardRef<MapView, Props>(function LiveMap({ destination
               </View>
             )}
           </View>
-        </Marker>
+        </MapboxGL.MarkerView>
       ))}
-    </MapView>
+    </MapboxGL.MapView>
   );
 });
 

@@ -147,4 +147,23 @@ That's a much stronger data asset for both affiliate attribution and (eventually
 4. **Build #4 (venue dashboard)** once consumer side has 10K+ DAU
 5. **Layer in #2 (sponsored placement) and #5 (brand collabs)** once distribution is meaningful
 
+---
+
+## Status (built)
+
+- **Step 3 — `analytics_events` wired** ✅ `lib/analytics.ts` logs the full
+  plan→arrival funnel (`plan_created`, `plan_joined`, `venue_suggested`,
+  `venue_locked`, `eta_share_started`, `departure_leaving`,
+  `departure_arrived`) plus `affiliate_click`. Retention/funnel/CTR queries are
+  in `docs/analytics-queries.md`.
+- **Step 2 — affiliate CTAs** ✅ (UX shipped, attribution pending) "Book a table"
+  (OpenTable) on the locked venue card and "Get a ride" (Uber) in the LIVE state
+  for members who haven't left. Deep links work today; affiliate codes slot into
+  `AFFILIATE` in `lib/affiliate.ts` once the partner programs are approved. Every
+  click is tracked as `affiliate_click` so conversion is measurable now.
+
+**Remaining for step 2 to earn money:** apply to the Uber Affiliate Program and
+OpenTable's affiliate program (via Impact/CJ), then set the codes in
+`lib/affiliate.ts`. No code changes beyond those two strings.
+
 Don't try to do more than one of these at a time. Each adds product surface area that competes for attention with the core loop.

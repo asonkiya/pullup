@@ -7,7 +7,6 @@ import {
   ScrollView,
   Share,
   SafeAreaView,
-  ActivityIndicator,
   Alert,
   Image,
   Linking,
@@ -17,8 +16,10 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
-import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar } from '@/components/ui';
+import { logEvent } from '@/lib/analytics';
+import { rideUrl, directionsUrl } from '@/lib/affiliate';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD } from '@/constants';
+import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
 
@@ -30,6 +31,7 @@ export default function PlanDetailScreen() {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [venueDetails, setVenueDetails] = useState<VenueCandidateRow | null>(null);
   const [swipeProgress, setSwipeProgress] = useState({ swiped: 0, total: 0 });
+  const [tieCount, setTieCount] = useState(0);
   const [lastMessage, setLastMessage] = useState<{ body: string; name: string } | null>(null);
   const [memberLocations, setMemberLocations] = useState<LiveMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,14 +62,35 @@ export default function PlanDetailScreen() {
     ]);
     if (planRes.data) {
       setPlan(planRes.data);
-      // Fetch venue details if locked
+      // Fetch venue details if locked. Primary: match by place_id. Fallback:
+      // resolve via the latest selection event (stores the stable venue row id),
+      // which is immune to place_id drift across providers.
       if (planRes.data.selected_place_id) {
-        const { data: v } = await supabase
+        let v: VenueCandidateRow | null = null;
+        const { data: byPlace } = await supabase
           .from('venue_candidates')
           .select('*')
           .eq('plan_id', id!)
-          .eq('google_place_id', planRes.data.selected_place_id)
-          .single();
+          .eq('place_id', planRes.data.selected_place_id)
+          .maybeSingle();
+        v = byPlace ?? null;
+        if (!v) {
+          const { data: sel } = await supabase
+            .from('venue_selection_events')
+            .select('venue_candidate_id')
+            .eq('plan_id', id!)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (sel?.venue_candidate_id) {
+            const { data: byId } = await supabase
+              .from('venue_candidates')
+              .select('*')
+              .eq('id', sel.venue_candidate_id)
+              .maybeSingle();
+            v = byId ?? null;
+          }
+        }
         if (v) setVenueDetails(v);
       }
     }
@@ -85,6 +108,27 @@ export default function PlanDetailScreen() {
       .eq('plan_id', id!)
       .eq('user_id', uid!);
     setSwipeProgress({ swiped: swiped ?? 0, total: total ?? 0 });
+
+    // Tie detection: ≥2 candidates at the auto-select threshold with equal
+    // top vote counts means the host needs to break it in the face-off.
+    if (planRes.data?.state === 'open' && membersRes.data?.length) {
+      const { data: allRight } = await supabase
+        .from('venue_swipes')
+        .select('venue_candidate_id')
+        .eq('plan_id', id!)
+        .eq('direction', 'right');
+      const counts = new Map<string, number>();
+      for (const s of allRight ?? []) {
+        counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
+      }
+      const totalMembers = membersRes.data.length;
+      const over = [...counts.values()].filter((c) => c / totalMembers >= AUTO_SELECT_THRESHOLD);
+      const maxC = over.length ? Math.max(...over) : 0;
+      const leaders = over.filter((c) => c === maxC);
+      setTieCount(leaders.length > 1 ? leaders.length : 0);
+    } else {
+      setTieCount(0);
+    }
 
     // Last chat message
     const { data: msgs } = await supabase
@@ -187,6 +231,8 @@ export default function PlanDetailScreen() {
           state: 'open',
           selected_place_id: null,
           selected_place_name: null,
+          selected_place_lat: null,
+          selected_place_lng: null,
         }).eq('id', id!);
         if (error) { Alert.alert('Could not re-open voting', error.message); return; }
         notifyMembers('voting_reopened');
@@ -215,6 +261,46 @@ export default function PlanDetailScreen() {
         router.back();
       }},
     ]);
+  }
+
+  async function planAnother() {
+    if (!currentUserId || !plan) return;
+    const { data: newPlan, error } = await supabase
+      .from('plans')
+      .insert({
+        creator_user_id: currentUserId,
+        title: plan.title,
+        state: 'open',
+        travel_mode_default: plan.travel_mode_default,
+        vibe: plan.vibe,
+      })
+      .select()
+      .single();
+    if (error || !newPlan) {
+      Alert.alert('Could not create plan', error?.message ?? 'Try again.');
+      return;
+    }
+    await supabase.from('plan_members').insert({
+      plan_id: newPlan.id,
+      user_id: currentUserId,
+      role: 'host',
+      rsvp_status: 'going',
+    });
+
+    // RLS only lets people add themselves, so the crew re-joins via a
+    // push that deep-links straight to the new plan's join token.
+    const token = Math.random().toString(36).slice(2, 10);
+    await supabase.from('plan_invites').insert({
+      plan_id: newPlan.id,
+      token,
+      inviter_user_id: currentUserId,
+      status: 'pending',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    notifyMembers('crew_reinvite', { join_token: token });
+
+    logEvent('plan_created', { planId: newPlan.id, properties: { redo_of: id } });
+    router.push(`/plan/${newPlan.id}`);
   }
 
   function openArrivalPicker() {
@@ -246,7 +332,39 @@ export default function PlanDetailScreen() {
       .eq('user_id', currentUserId);
     if (error) { Alert.alert('Could not update status', error.message); return; }
     notifyMembers(status === 'leaving' ? 'leaving' : 'arrived');
+    if (status === 'leaving') logEvent('departure_leaving', { planId: id! });
+    if (status === 'arrived') logEvent('departure_arrived', { planId: id! });
     fetchAll();
+    // When you mark yourself as leaving, land on the live map so ETA sharing
+    // can start, and offer turn-by-turn navigation on top. Sharing is
+    // foreground-only, so we always route through the ETA screen first.
+    if (status === 'leaving') {
+      router.push(`/plan/${id}/eta`);
+      const lat = plan?.selected_place_lat ?? venueDetails?.lat;
+      const lng = plan?.selected_place_lng ?? venueDetails?.lng;
+      if (lat != null && lng != null) {
+        Alert.alert("You're on your way!", 'Want turn-by-turn directions too?', [
+          { text: 'Stay on live map', style: 'cancel' },
+          {
+            text: 'Open Google Maps',
+            onPress: () => {
+              logEvent('navigate_click', { planId: id!, properties: { travel_mode: plan?.travel_mode_default ?? 'drive' } });
+              Linking.openURL(directionsUrl({ name: venueDetails?.name ?? 'Destination', lat, lng }, plan?.travel_mode_default));
+            },
+          },
+        ]);
+      }
+    }
+  }
+
+  // High-intent commerce CTA (get a ride). Opens the partner and records the
+  // click so we can measure conversion from plan → ride. "Book a table" was
+  // removed: Google doesn't expose the Maps reserve link, and an OpenTable
+  // name-search dead-ends outside its coverage — the Website button already
+  // serves booking intent.
+  function openCommerce(type: 'ride', venue: { name: string; lat: number; lng: number }) {
+    logEvent('affiliate_click', { planId: id!, properties: { type, venue: venue.name } });
+    Linking.openURL(rideUrl(venue));
   }
 
   const isHost     = members.find(m => m.user_id === currentUserId)?.role === 'host';
@@ -257,7 +375,7 @@ export default function PlanDetailScreen() {
 
   if (loading) return (
     <SafeAreaView style={styles.container}>
-      <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
+      <SkeletonList />
     </SafeAreaView>
   );
 
@@ -303,6 +421,26 @@ export default function PlanDetailScreen() {
           </View>
         </View>
         <ScrollView contentContainerStyle={styles.body}>
+          {/* Tie banner */}
+          {tieCount > 1 && (
+            <TouchableOpacity
+              style={styles.tieBanner}
+              onPress={() => isHost && router.push(`/plan/${id}/faceoff`)}
+              activeOpacity={isHost ? 0.85 : 1}
+            >
+              <Text style={styles.tieEmoji}>⚡️</Text>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.tieTitle}>It&apos;s a tie!</Text>
+                <Text style={styles.tieSub}>
+                  {isHost
+                    ? `${tieCount} spots are equally loved — tap to break the tie`
+                    : 'Waiting for the host to pick the winner'}
+                </Text>
+              </View>
+              {isHost && <Feather name="chevron-right" size={18} color={COLORS.warningDeep} />}
+            </TouchableOpacity>
+          )}
+
           {/* Voting card */}
           <View style={styles.votingCard}>
             <Text style={styles.votingTitle}>Find the spot</Text>
@@ -486,8 +624,8 @@ export default function PlanDetailScreen() {
     const notLeft   = members.filter(m => m.departure_status === 'not_left');
     const myStatus  = myMember?.departure_status;
 
-    const venueLat = venueDetails?.lat;
-    const venueLng = venueDetails?.lng;
+    const venueLat = plan.selected_place_lat ?? venueDetails?.lat;
+    const venueLng = plan.selected_place_lng ?? venueDetails?.lng;
     const destination = venueLat != null && venueLng != null
       ? { lat: venueLat, lng: venueLng, name: plan.selected_place_name ?? undefined }
       : null;
@@ -520,7 +658,7 @@ export default function PlanDetailScreen() {
             { label: 'On the way', list: onTheWay, bg: COLORS.warningTint, fg: COLORS.warningDeep },
             { label: 'Not left',   list: notLeft,  bg: COLORS.border,      fg: COLORS.textSecondary },
           ].map(({ label, list, bg, fg }) => list.length > 0 && (
-            <View key={label} style={[styles.statusRow, { shadowColor: '#000', ...SHADOWS.card }]}>
+            <View key={label} style={[styles.statusRow, SHADOWS.card]}>
               <View style={[styles.statusPill, { backgroundColor: bg }]}>
                 <Text style={[styles.statusPillText, { color: fg }]}>{label}</Text>
               </View>
@@ -539,6 +677,12 @@ export default function PlanDetailScreen() {
               <Feather name="chevron-right" size={16} color={COLORS.textFaint} />
             </TouchableOpacity>
           )}
+
+          {/* See everyone's ETA */}
+          <View style={styles.actionRow}>
+            <HButton label="Who's close" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/eta`)} />
+            <HButton label="Chat" variant="ghost" size="sm" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
+          </View>
 
           {/* Departure action */}
           <View style={styles.departureSection}>
@@ -559,6 +703,15 @@ export default function PlanDetailScreen() {
             <Text style={styles.footerHint}>
               {myStatus === 'not_left' ? "Tap when you leave — your crew will know." : "Flips to \"I've arrived\" once you're moving."}
             </Text>
+            {myStatus === 'not_left' && destination && (
+              <HButton
+                label={`Get a ride to ${plan.selected_place_name ?? 'the spot'}`}
+                variant="tint"
+                size="md"
+                fullWidth
+                onPress={() => openCommerce('ride', { name: destination.name ?? 'Destination', lat: destination.lat, lng: destination.lng })}
+              />
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -596,7 +749,7 @@ export default function PlanDetailScreen() {
         </Card>
 
         {plan.state === 'completed' && (
-          <HButton label="Plan another with this crew" variant="primary" size="lg" fullWidth onPress={() => router.push('/plan/create')} />
+          <HButton label="Plan another with this crew" variant="primary" size="lg" fullWidth onPress={planAnother} />
         )}
         <HButton label="View chat" variant="ghost" size="md" fullWidth onPress={() => router.push(`/plan/${id}/chat`)} />
         <View style={{ flex: 1 }} />
@@ -624,6 +777,20 @@ const styles = StyleSheet.create({
   body: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xxl },
 
   // Planning
+  tieBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.warningTint,
+    borderRadius: RADIUS.card,
+    borderWidth: 1.5,
+    borderColor: '#F2D9A8',
+    padding: SPACING.md,
+  },
+  tieEmoji: { fontSize: 24 },
+  tieTitle: { fontSize: FONT_SIZE.md, fontFamily: FONTS.bold, color: COLORS.warningDeep, includeFontPadding: false },
+  tieSub: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.regular, color: COLORS.warningDeep, includeFontPadding: false },
+
   votingCard: {
     backgroundColor: COLORS.primaryFaint,
     borderWidth: 1.5,

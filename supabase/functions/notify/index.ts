@@ -14,17 +14,26 @@ type NotifyEvent =
   | 'plan_cancelled'
   | 'leaving'
   | 'arrived'
-  | 'chat_message';
+  | 'chat_message'
+  | 'crew_reinvite'
+  | 'crew_invited'
+  | 'venue_tie';
 
 interface NotifyPayload {
   event: NotifyEvent;
   plan_id: string;
   actor_user_id: string;
+  // When set, send to exactly these users instead of the plan's members
+  // (used to invite people who aren't in the plan yet).
+  recipient_user_ids?: string[];
   extra: {
     actor_name: string;
     plan_title: string;
     place_name?: string;
     message_body?: string;
+    // crew_reinvite: recipients are the OLD plan's members; tapping routes
+    // to /join/{join_token} for the new plan instead of the plan screen.
+    join_token?: string;
   };
 }
 
@@ -53,6 +62,12 @@ function buildMessage(payload: NotifyPayload): { title: string; body: string } {
       return { title: plan_title, body: `${actor_name} arrived!` };
     case 'chat_message':
       return { title: plan_title, body: `${actor_name}: ${(message_body ?? '').slice(0, 100)}` };
+    case 'crew_reinvite':
+      return { title: plan_title, body: `${actor_name} is planning another one — tap to join` };
+    case 'crew_invited':
+      return { title: plan_title, body: `${actor_name} invited you — tap to join` };
+    case 'venue_tie':
+      return { title: plan_title, body: `It's a tie! Two spots are equally loved — you pick the winner` };
     default:
       return { title: plan_title, body: 'New activity' };
   }
@@ -92,27 +107,43 @@ Deno.serve(async (req) => {
 
   const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Fetch plan members with their push tokens
-  const { data: members, error: membersError } = await adminClient
-    .from('plan_members')
-    .select('user_id, role, users(push_token)')
-    .eq('plan_id', plan_id);
+  let recipients: Array<{ user_id: string; role: string; users: { push_token: string | null } | null }>;
 
-  if (membersError || !members) {
-    return new Response(JSON.stringify({ sent: 0, error: 'Failed to fetch members' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  if (payload.recipient_user_ids?.length) {
+    // Explicit recipients (people not yet in the plan)
+    const { data: users, error: usersError } = await adminClient
+      .from('users')
+      .select('id, push_token')
+      .in('id', payload.recipient_user_ids);
+    if (usersError || !users) {
+      return new Response(JSON.stringify({ sent: 0, error: 'Failed to fetch recipients' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    recipients = users
+      .filter((u) => u.id !== actor_user_id && u.push_token)
+      .map((u) => ({ user_id: u.id, role: 'member', users: { push_token: u.push_token } }));
+  } else {
+    // Fetch plan members with their push tokens
+    const { data: members, error: membersError } = await adminClient
+      .from('plan_members')
+      .select('user_id, role, users(push_token)')
+      .eq('plan_id', plan_id);
 
-  // Build recipient list
-  let recipients = members.filter((m) => {
-    const pushToken = (m as Record<string, unknown>).users as { push_token: string | null } | null;
-    return m.user_id !== actor_user_id && pushToken?.push_token;
-  });
+    if (membersError || !members) {
+      return new Response(JSON.stringify({ sent: 0, error: 'Failed to fetch members' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // For member_joined, only notify the host
-  if (event === 'member_joined') {
-    recipients = recipients.filter((m) => m.role === 'host');
+    recipients = (members as unknown as typeof recipients).filter(
+      (m) => m.user_id !== actor_user_id && m.users?.push_token
+    );
+
+    // Host-only events
+    if (event === 'member_joined' || event === 'venue_tie') {
+      recipients = recipients.filter((m) => m.role === 'host');
+    }
   }
 
   if (recipients.length === 0) {
@@ -131,7 +162,9 @@ Deno.serve(async (req) => {
       title,
       body,
       sound: 'default' as const,
-      data: { plan_id },
+      data: payload.extra?.join_token
+        ? { plan_id, join_token: payload.extra.join_token }
+        : { plan_id },
     };
   });
 

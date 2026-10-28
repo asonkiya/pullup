@@ -15,8 +15,12 @@ import {
   Outfit_700Bold,
   Outfit_800ExtraBold,
 } from '@expo-google-fonts/outfit';
+import MapboxGL from '@rnmapbox/maps';
 import { supabase } from '@/lib/supabase';
+import { useLocationSharing } from '@/lib/locationSharing';
 import type { Session } from '@supabase/supabase-js';
+
+MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -92,8 +96,14 @@ export default function RootLayout() {
   // Handle notification taps → navigate to plan
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const planId = response.notification.request.content.data?.plan_id as string | undefined;
-      if (planId) router.push(`/plan/${planId}`);
+      const data = response.notification.request.content.data ?? {};
+      const joinToken = data.join_token as string | undefined;
+      const planId = data.plan_id as string | undefined;
+      if (joinToken) {
+        router.push(`/join/${joinToken}`);
+      } else if (planId) {
+        router.push(`/plan/${planId}`);
+      }
     });
     return () => sub.remove();
   }, []);
@@ -126,6 +136,7 @@ export default function RootLayout() {
   }, [session]);
 
   useProtectedRoute(session, ready);
+  useLocationSharing(session?.user.id ?? null);
 
   if (!fontsLoaded) return null;
 

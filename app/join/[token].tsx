@@ -3,6 +3,7 @@ import { View, Text, ActivityIndicator, StyleSheet, SafeAreaView } from 'react-n
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
 import { HButton } from '@/components/ui';
 
@@ -29,6 +30,7 @@ export default function JoinScreen() {
     if (!existing) {
       const { error: memberError } = await supabase.from('plan_members').insert({ plan_id: invite.plan_id, user_id: user.id, role: 'member', rsvp_status: 'going' });
       if (memberError) { setErrorMsg('Could not join the plan. Try again.'); setStatus('error'); return; }
+      logEvent('plan_joined', { planId: invite.plan_id });
     }
     await supabase.from('plan_invites').update({ status: 'accepted' }).eq('id', invite.id);
     await SecureStore.deleteItemAsync('pending_join_token');

@@ -6,5 +6,6 @@ export { HButton }      from './HButton';
 export { Label }        from './Label';
 export { NavHead }      from './NavHead';
 export { ProgressBar }  from './ProgressBar';
+export { Skeleton, SkeletonRow, SkeletonList } from './Skeleton';
 export { StatePill }    from './StatePill';
 export { VibeChip }     from './VibeChip';

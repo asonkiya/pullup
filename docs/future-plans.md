@@ -2,7 +2,7 @@
 
 A running backlog of work that hasn't been picked up yet, grouped by category and ordered by rough priority within each group. An agent (or human) should be able to read any entry and have enough context to start, including the files involved, the data model touchpoints, and the gotchas to watch for.
 
-Last refreshed: 2026-06-16.
+Last refreshed: 2026-07-11.
 
 ---
 
@@ -29,23 +29,11 @@ Same pattern as above — `activatePlan()` in `app/plan/[id]/index.tsx:118-126` 
 
 ## Feature gaps (real holes in the product)
 
-### 4. Move location sharing into the root layout
-**Problem.** `Location.watchPositionAsync` lives inside `app/plan/[id]/eta.tsx`. When the user navigates away from that screen, the cleanup runs `locSub.current?.remove()` → no new `location_points` until they return to the ETA tab. The `location_share_sessions` row stays `active` so other members see a frozen avatar.
+### 4. Move location sharing into the root layout ✅ DONE
+`lib/locationSharing.ts` hook mounted in the root layout watches once for all active sessions and uploads points per session. Screens create/stop sessions and call `refreshLocationSharing()`. iOS still suspends the watch when backgrounded without background entitlements — true background tracking remains item #6.
 
-**Fix.** Lift the subscription into `app/_layout.tsx` (or a custom hook used by the root layout). On mount, query `location_share_sessions` for any `(user_id=me, status='active', expires_at>now)` rows and start a single watch that uploads points for ALL active sessions.
-
-**Files.** `app/_layout.tsx`, `app/plan/[id]/eta.tsx` (remove the watch), maybe a new `lib/locationSharing.ts` hook.
-
-**Gotcha.** iOS will still suspend `watchPositionAsync` ~10 min after backgrounding without background-location entitlements. This fix just removes the screen-coupling — true background tracking is item #6.
-
-### 5. Face-off tiebreaker
-**Problem.** When multiple venues all hit the 60% auto-select threshold, `checkAutoSelect` in `app/plan/[id]/venues.tsx:133-154` locks the first one it sees. No tie-breaking.
-
-**Fix.** When two or more candidates are tied (or within 1 vote of each other) on a swipe that would trigger auto-lock, instead push the host to `app/plan/[id]/faceoff.tsx` (new) with the tied candidate IDs. UI: bracket-style side-by-side cards, host taps a winner, the winner gets the host-type `venue_selection_events` insert.
-
-**Files.** `app/plan/[id]/venues.tsx` (detection), `app/plan/[id]/faceoff.tsx` (new), `app/plan/[id]/_layout.tsx` (registration).
-
-**Gotcha.** Make sure only the host can resolve a tie — RLS policy `vse_insert` already enforces this for `selection_type='host'`.
+### 5. Face-off tiebreaker ✅ DONE
+`checkAutoSelect` compares all candidates' right-swipes; a clear leader locks, a genuine tie routes the host to `app/plan/[id]/faceoff.tsx` (VS bracket, tap the winner → host-type selection event). Non-host swipers trigger a host-only `venue_tie` push; plan detail shows a tie banner in the PLANNING state as the host's entry point.
 
 ### 6. Background location
 **Problem.** Today, sharing only works while the app is in the foreground. Useful upgrade for real-world hangout coordination.
@@ -59,106 +47,40 @@ Same pattern as above — `activatePlan()` in `app/plan/[id]/index.tsx:118-126` 
 
 **Files.** `app/plan/[id]/eta.tsx` (mode toggle), `app/_layout.tsx` (register task), new `lib/backgroundLocationTask.ts`, migration to extend `share_mode` enum.
 
-### 7. Recent crew / past members suggestions
-**Problem.** Invite screen (`app/plan/[id]/invite.tsx`) shows the link card and share button, but has a placeholder section for "or grab a recent crew" that's never been wired up.
-
-**Fix.** Query `plan_members` joined on past plans for the current user, dedupe by `user_id`, show as tappable avatar tiles. Tapping inserts that user into `plan_members` for the new plan and notifies them.
-
-**Files.** `app/plan/[id]/invite.tsx`.
-
-**Gotcha.** Need to think about whether you can add someone to a plan without their consent. Today, joining requires the user to tap an invite link. Adding them directly bypasses that. Probably want this to send them a notification with a "Join" CTA rather than silently inserting.
+### 7. Recent crew / past members suggestions ✅ DONE
+Invite screen shows past co-members as tappable tiles. Tapping sends a `crew_invited` push that deep-links to the plan's join token — the invitee joins themselves (consent-respecting, and consistent with the `pm_insert_self` RLS policy). `notify` gained `recipient_user_ids` for targeting non-members.
 
 ---
 
 ## UX polish (cosmetic, low risk)
 
-### 8. Skeleton loaders
-**Problem.** All loading states are `ActivityIndicator` spinners. Looks generic.
+### 8. Skeleton loaders ✅ DONE
+`components/ui/Skeleton.tsx` (RN Animated shimmer, Expo Go safe) with `SkeletonRow`/`SkeletonList`. Replaced spinners on home, plan detail, and the venue deck.
 
-**Fix.** Build `components/ui/Skeleton.tsx` — a shimmer-animated `View` (using RN `Animated`, not Reanimated, since the `HButton` precedent showed Reanimated v4 isn't compatible with Expo Go). Replace `ActivityIndicator` in:
-- `app/(tabs)/index.tsx` (plans list loading)
-- `app/plan/[id]/index.tsx` (plan detail loading)
-- `app/plan/[id]/venues.tsx` ("Finding spots nearby…" state)
+### 9. Empty states + first-time onboarding ✅ DONE
+The home empty state is now a 3-step how-it-works walkthrough with a "Start your first plan" CTA. It lives in the empty state, so it self-expires once the user has plans — no onboarding flag or extra route.
 
-**Files.** `components/ui/Skeleton.tsx` (new), `components/ui/index.ts` (export), then 3 screen edits.
-
-### 9. Empty states + first-time onboarding
-**Problem.** The empty-plans state on home is just text ("No plans yet — tap + below"). New users have no context for what the app does.
-
-**Fix.** A 2- or 3-screen welcome carousel on first launch (or on first time the home screen is empty):
-1. "Swipe to find the spot" with a mock venue card
-2. "See who's on the way" with a mock LiveMap
-3. "+ to start a plan"
-
-Use `expo-secure-store` to set an `onboarding_completed` flag so it only shows once.
-
-**Files.** `app/onboarding.tsx` (new), `app/_layout.tsx` (route), `app/(tabs)/index.tsx` (empty state copy refresh).
-
-### 10. Profile screen functionality
-**Problem.** `app/(tabs)/profile.tsx` is mostly a sign-out button. Should also support:
-- Edit `display_name`
-- Toggle push notifications (with copy explaining what events trigger)
-- View location sharing history (past `location_share_sessions`)
-- Delete account (see item #13)
-
-**Files.** `app/(tabs)/profile.tsx`, possibly a new `app/profile/edit.tsx` and `app/profile/notifications.tsx`.
+### 10. Profile screen functionality — MOSTLY DONE
+Display-name editing, delete account (2-step confirm → `delete-account` edge function), and privacy policy link all exist. Still open if wanted: push notification toggle, location sharing history view.
 
 ---
 
 ## Production readiness (pre-launch checklist)
 
-### 11. EAS dev build
-**Why.** Required for:
-- `pullup://` deep links to actually work when tapped from iMessage (currently they only work inside Expo Go via `exp://`, see [features.md §2](features.md#expo-go-caveat))
-- Reanimated v4 + gesture-handler to work for the venue swipe deck on the device
-- Background location (item #6)
-- Real-world testing with people who don't run your local dev server
+### 11. EAS dev build ✅ DONE
+`eas.json` and `app.json` are configured (bundle ID `com.ahrimane.pullup`, team `Z428Z377RQ`). Dev client builds are working. See `docs/submission-runbook.md` for the production build step.
 
-**How.** `eas build --profile development --platform ios`. Add an `eas.json` if not present. Install on test devices via TestFlight or direct install.
+### 12. Privacy policy ✅ DONE
+`docs/privacy-policy.md` is written. Needs to be published via GitHub Pages — see `docs/submission-runbook.md` step 1.
 
-**Files.** `eas.json` (new), `app.json` may need updates to bundle ID / signing config.
+### 13. Delete account flow ✅ DONE
+In-app "Delete account" is accessible from the profile screen (required by App Store guideline 5.1.1.v).
 
-### 12. Privacy policy + terms of service
-**Why.** App Store and Play Store require both. Especially load-bearing because Pull Up handles real-time location.
+### 14. Analytics wiring ✅ DONE
+`lib/analytics.ts` ships fire-and-forget event logging. Instrumented events: `plan_created`, `plan_joined`, `venue_suggested`, `venue_locked`, `eta_share_started`, `departure_leaving`, `departure_arrived`, `affiliate_click`. Retention + funnel SQL in `docs/analytics-queries.md`.
 
-**Approach.** Use a generator (e.g., termly.io, iubenda) — get a real lawyer review if/when this monetizes. Host the pages somewhere stable (a GitHub Pages site is fine for v1) and link from the app's profile/settings screen.
-
-**Files.** `app/(tabs)/profile.tsx` (links), no schema changes.
-
-### 13. Delete account flow
-**Why.** Apple's App Store guidelines (5.1.1.v) require this for any app with account signup. Play Store has similar requirements.
-
-**Fix.** In profile, a "Delete account" button with a 2-step confirmation. Calls a new edge function `delete-account` that:
-1. Calls `admin.auth.deleteUser()` (Supabase admin API)
-2. Cascades clean up `users` row → cascades clean up plan_members, location data, etc. via FK cascades
-
-**Files.** `app/(tabs)/profile.tsx`, `supabase/functions/delete-account/index.ts` (new).
-
-**Gotcha.** Make sure cascade deletes really do clean everything — the `plans` cascade list is verified in [database.md "Cascade behaviour"](database.md#cascade-behaviour) but `users` cascade behaviour also matters. Be careful with `plans` rows where the deleted user is `creator_user_id` — there's no `on delete cascade` defined on that column, so an orphaned plan with no creator might result.
-
-### 14. Analytics wiring
-**Problem.** `analytics_events` table exists in the schema but nothing writes to it.
-
-**Fix.** Hook up these events to the existing table:
-- `plan_created`
-- `venue_locked` (with `selection_type` as a prop)
-- `venue_suggested`
-- `plan_activated`
-- `location_sharing_started`
-- `chat_message_sent`
-- `voting_reopened`
-- `plan_completed` / `plan_cancelled`
-
-Write a thin client helper `lib/analytics.ts` with `track(event_name, properties)` that just does an insert. No third-party tool needed yet.
-
-**Files.** `lib/analytics.ts` (new), small additions in handlers across `app/`.
-
-### 15. App Store / Play Store submission
-**Why.** `docs/publishing.md` walks through the process but you haven't actually done it.
-
-**Prereqs.** Items #11, #12, #13 above. Apple Developer account ($99/yr), Play Console account ($25 one-time).
-
-**Process.** EAS Submit handles most of it (`eas submit --platform ios`).
+### 15. App Store submission — IN PROGRESS
+Store listing (`store.config.json`) passes `eas metadata:lint`. Submission runbook at `docs/submission-runbook.md`. Remaining steps require interactive Apple account access — see the runbook.
 
 ---
 
@@ -178,12 +100,8 @@ Write a thin client helper `lib/analytics.ts` with `track(event_name, properties
 
 **Files.** Migration, `app/plan/[id]/chat.tsx`, possibly a `MessageMedia` component.
 
-### 18. Plan templates / "redo this plan"
-**Problem.** No way to re-use a past plan setup.
-
-**Fix.** "Plan another with this crew" CTA on the DONE state already exists in the UI but isn't wired up. Hook it to: create a new plan with same title pattern, same vibe, prefill members.
-
-**Files.** `app/plan/[id]/index.tsx` (DONE state action), helper to clone plan + members.
+### 18. Plan templates / "redo this plan" ✅ DONE
+"Plan another with this crew" on the DONE state clones the plan (title + vibe), creates a join token, and sends a `crew_reinvite` push to the old crew that deep-links to `/join/{token}`. Members re-join themselves (RLS-consistent).
 
 ### 19. iMessage extension / WhatsApp share card
 **Why.** The network-effect cliff — getting friend group #2 to install the app — is the single biggest adoption blocker (see the product spec's "Honest concerns"). An iMessage extension that lets friends RSVP without installing the standalone app would meaningfully lower the friction.
@@ -197,6 +115,6 @@ Write a thin client helper `lib/analytics.ts` with `track(event_name, properties
 - Always check `docs/database.md` for current schema before assuming column names. The repo iterates fast and migrations land often.
 - `docs/features.md` has end-to-end flow walkthroughs that are usually the fastest way to understand how a feature actually works.
 - Push to `main` is the workflow — small commits, no PR ceremony for solo work.
-- Run `npx tsc --noEmit` before committing. Two pre-existing TS errors are known and OK to ignore: `app/plan/[id]/index.tsx` Label children (number→string) and shadowColor duplicate on the LIVE state status row.
+- Run `npx tsc --noEmit` before committing. The codebase is currently TS-clean — no known suppressions.
 - Realtime subs in Supabase don't always fire for the user's own writes — every mutating handler in the codebase explicitly calls `fetchAll()` (or the equivalent refetch) after the await. Don't rely on realtime alone.
 - Expo Go limitations to remember: Reanimated v4 + gesture-handler need a dev build, custom URL schemes (`pullup://`) don't work, background location doesn't work.

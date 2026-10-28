@@ -34,6 +34,8 @@ export type PlanRow = {
   anchor_lng: number | null;
   selected_place_id: string | null;
   selected_place_name: string | null;
+  selected_place_lat: number | null;
+  selected_place_lng: number | null;
   travel_mode_default: TravelMode;
   vibe: string | null;
   arrival_time: string | null;
@@ -61,10 +63,13 @@ export type PlanInviteRow = {
   expires_at: string;
 };
 
+export type VenueProvider = 'google' | 'mapbox';
+
 export type VenueCandidateRow = {
   id: string;
   plan_id: string;
-  google_place_id: string;
+  place_id: string;
+  provider: VenueProvider;
   name: string;
   lat: number;
   lng: number;
@@ -169,7 +174,7 @@ export type Database = {
       };
       plans: {
         Row: PlanRow;
-        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled'>;
+        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'selected_place_lat' | 'selected_place_lng' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled'>;
         Update: Partial<Omit<PlanRow, 'id' | 'created_at'>>;
         Relationships: [];
       };
@@ -187,7 +192,7 @@ export type Database = {
       };
       venue_candidates: {
         Row: VenueCandidateRow;
-        Insert: OptionalFields<Omit<VenueCandidateRow, 'id' | 'created_at'>, 'price_level' | 'rating' | 'category' | 'source' | 'eta_seconds' | 'photo_urls' | 'address' | 'website_url' | 'maps_url' | 'user_rating_count' | 'is_open' | 'suggested_by_user_id'>;
+        Insert: OptionalFields<Omit<VenueCandidateRow, 'id' | 'created_at'>, 'provider' | 'price_level' | 'rating' | 'category' | 'source' | 'eta_seconds' | 'photo_urls' | 'address' | 'website_url' | 'maps_url' | 'user_rating_count' | 'is_open' | 'suggested_by_user_id'>;
         Update: Partial<Omit<VenueCandidateRow, 'id' | 'created_at'>>;
         Relationships: [];
       };

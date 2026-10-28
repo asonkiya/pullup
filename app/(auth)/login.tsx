@@ -16,8 +16,8 @@ import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants'
 
 export default function LoginScreen() {
   const [mode, setMode]       = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail]     = useState('dev@pullup.app');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail]     = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function submit() {
@@ -28,8 +28,18 @@ export default function LoginScreen() {
       const { error } = await supabase.auth.signInWithPassword({ email: e, password });
       if (error) Alert.alert('Sign in failed', error.message);
     } else {
-      const { error } = await supabase.auth.signUp({ email: e, password });
-      if (error) Alert.alert('Sign up failed', error.message);
+      const { data, error } = await supabase.auth.signUp({ email: e, password });
+      if (error) {
+        Alert.alert('Sign up failed', error.message);
+      } else if (!data.session) {
+        // Email confirmation is enabled — no session yet. Tell the user instead
+        // of leaving them stuck on this screen.
+        Alert.alert(
+          'Confirm your email',
+          'We sent a confirmation link to ' + e + '. Tap it, then come back and sign in.'
+        );
+        setMode('signin');
+      }
     }
     setLoading(false);
   }

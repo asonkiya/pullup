@@ -13,17 +13,24 @@ import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
-import { NavHead, HButton, AvatarRow, VibeChip } from '@/components/ui';
+import { NavHead, HButton, Avatar, AvatarRow, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
+
+type CrewSuggestion = { user_id: string; display_name: string };
 
 export default function InviteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
   const [plan, setPlan]     = useState<PlanRow | null>(null);
   const [members, setMembers] = useState<string[]>([]);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
+  const [myName, setMyName] = useState('Someone');
+  const [crew, setCrew] = useState<CrewSuggestion[]>([]);
+  const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
+
+  const inviteLink = inviteToken ? `pullup://join/${inviteToken}` : null;
 
   useEffect(() => {
     (async () => {
@@ -35,14 +42,48 @@ export default function InviteScreen() {
 
       const { data: m } = await supabase
         .from('plan_members')
-        .select('users(display_name)')
+        .select('user_id, users(display_name)')
         .eq('plan_id', id!);
-      setMembers((m ?? []).map((r: any) => r.users?.display_name ?? '?'));
+      const currentMembers = (m ?? []) as unknown as Array<{ user_id: string; users: { display_name: string } | null }>;
+      setMembers(currentMembers.map((r) => r.users?.display_name ?? '?'));
+      if (user) {
+        const me = currentMembers.find((r) => r.user_id === user.id);
+        if (me?.users?.display_name) setMyName(me.users.display_name);
+        loadRecentCrew(user.id, new Set(currentMembers.map((r) => r.user_id)));
+      }
     })();
   }, [id]);
 
-  async function getOrCreateInviteLink(): Promise<string> {
-    if (inviteLink) return inviteLink;
+  // People from your past plans who aren't in this one yet.
+  async function loadRecentCrew(userId: string, exclude: Set<string>) {
+    const { data: myPlans } = await supabase
+      .from('plan_members')
+      .select('plan_id')
+      .eq('user_id', userId);
+    const planIds = (myPlans ?? []).map((r) => r.plan_id).filter((p) => p !== id);
+    if (planIds.length === 0) return;
+
+    const { data: co } = await supabase
+      .from('plan_members')
+      .select('user_id, joined_at, users(display_name)')
+      .in('plan_id', planIds)
+      .neq('user_id', userId)
+      .order('joined_at', { ascending: false })
+      .limit(50);
+
+    const seen = new Set<string>();
+    const suggestions: CrewSuggestion[] = [];
+    for (const row of (co ?? []) as unknown as Array<{ user_id: string; users: { display_name: string } | null }>) {
+      if (exclude.has(row.user_id) || seen.has(row.user_id)) continue;
+      seen.add(row.user_id);
+      suggestions.push({ user_id: row.user_id, display_name: row.users?.display_name ?? '?' });
+      if (suggestions.length >= 8) break;
+    }
+    setCrew(suggestions);
+  }
+
+  async function getOrCreateInviteToken(): Promise<string> {
+    if (inviteToken) return inviteToken;
     if (!uid || !plan) return '';
     const token = Math.random().toString(36).slice(2, 10);
     const { data: invite } = await supabase
@@ -56,21 +97,39 @@ export default function InviteScreen() {
       })
       .select()
       .single();
-    const link = `pullup://join/${invite?.token ?? token}`;
-    setInviteLink(link);
-    return link;
+    const finalToken = invite?.token ?? token;
+    setInviteToken(finalToken);
+    return finalToken;
   }
 
   async function copyLink() {
-    const link = await getOrCreateInviteLink();
-    await Clipboard.setStringAsync(link);
+    const token = await getOrCreateInviteToken();
+    await Clipboard.setStringAsync(`pullup://join/${token}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   async function shareLink() {
-    const link = await getOrCreateInviteLink();
-    Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\n${link}` });
+    const token = await getOrCreateInviteToken();
+    Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\npullup://join/${token}` });
+  }
+
+  // Pushes a join link to someone from a past plan. They join themselves —
+  // nobody gets silently added to a plan they didn't agree to.
+  async function inviteCrewMember(person: CrewSuggestion) {
+    if (!uid || !plan || invitedIds.has(person.user_id)) return;
+    const token = await getOrCreateInviteToken();
+    if (!token) return;
+    setInvitedIds((prev) => new Set(prev).add(person.user_id));
+    supabase.functions.invoke('notify', {
+      body: {
+        event: 'crew_invited',
+        plan_id: id,
+        actor_user_id: uid,
+        recipient_user_ids: [person.user_id],
+        extra: { actor_name: myName, plan_title: plan.title, join_token: token },
+      },
+    }).catch(() => {});
   }
 
   return (
@@ -103,12 +162,37 @@ export default function InviteScreen() {
           fullWidth
         />
 
-        {/* Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or add from recent plans</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {/* Recent crew */}
+        {crew.length > 0 && (
+          <>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or add from recent plans</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.crewGrid}>
+              {crew.map((person, i) => {
+                const invited = invitedIds.has(person.user_id);
+                return (
+                  <TouchableOpacity
+                    key={person.user_id}
+                    style={[styles.crewTile, invited && styles.crewTileInvited]}
+                    onPress={() => inviteCrewMember(person)}
+                    activeOpacity={0.7}
+                    disabled={invited}
+                  >
+                    <Avatar name={person.display_name} index={i} size={40} />
+                    <Text style={styles.crewName} numberOfLines={1}>{person.display_name}</Text>
+                    <Text style={[styles.crewAction, invited && styles.crewActionInvited]}>
+                      {invited ? 'Invited ✓' : '+ Invite'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         {/* Going so far footer */}
         <View style={styles.goingRow}>
@@ -178,6 +262,42 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semibold,
     color: COLORS.textSecondary,
     includeFontPadding: false,
+  },
+
+  crewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  crewTile: {
+    width: '30.5%',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.card,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  crewTileInvited: {
+    borderColor: COLORS.successDeep,
+    backgroundColor: COLORS.successTint,
+  },
+  crewName: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
+    color: COLORS.text,
+    maxWidth: '90%',
+    includeFontPadding: false,
+  },
+  crewAction: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
+    includeFontPadding: false,
+  },
+  crewActionInvited: {
+    color: COLORS.successDeep,
   },
 
   goingRow: {

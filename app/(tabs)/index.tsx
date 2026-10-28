@@ -6,15 +6,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  ActivityIndicator,
   Image,
   Animated,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useRef } from 'react';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { COLORS, FONTS, FONT_SIZE, SPACING, SHADOWS } from '@/constants';
-import { Avatar, AvatarRow, Card, Label, StatePill, VibeChip } from '@/components/ui';
+import { Avatar, AvatarRow, Card, Label, SkeletonList, StatePill, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
 
 type MemberPreview = { display_name: string };
@@ -25,7 +27,49 @@ export default function HomeScreen() {
   const [myInitial, setMyInitial] = useState('?');
   const [loading, setLoading] = useState(true);
   const [pastExpanded, setPastExpanded] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
+  const [joinInput, setJoinInput] = useState('');
   const router = useRouter();
+
+  // Accepts a full pullup://join/TOKEN link, an exp:// dev link, or a raw code.
+  function submitJoinCode() {
+    const raw = joinInput.trim();
+    const match = raw.match(/join\/([A-Za-z0-9]+)/);
+    const token = (match ? match[1] : raw).trim();
+    if (!/^[a-z0-9]{6,12}$/i.test(token)) {
+      Alert.alert("That doesn't look right", 'Paste the invite link or just the code at the end of it.');
+      return;
+    }
+    setShowJoin(false);
+    setJoinInput('');
+    router.push(`/join/${token}`);
+  }
+
+  function renderJoinEntry() {
+    return showJoin ? (
+      <View style={styles.joinRow}>
+        <TextInput
+          style={styles.joinInput}
+          value={joinInput}
+          onChangeText={setJoinInput}
+          placeholder="Paste invite link or code"
+          placeholderTextColor={COLORS.textFaint}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          returnKeyType="go"
+          onSubmitEditing={submitJoinCode}
+        />
+        <TouchableOpacity onPress={submitJoinCode} style={styles.joinGo}>
+          <Text style={styles.joinGoText}>Join</Text>
+        </TouchableOpacity>
+      </View>
+    ) : (
+      <TouchableOpacity onPress={() => setShowJoin(true)} style={styles.joinLink}>
+        <Text style={styles.joinLinkText}>Have an invite link? Join with a code</Text>
+      </TouchableOpacity>
+    );
+  }
 
   // Live ticker dot pulse
   const dotScale = useRef(new Animated.Value(1)).current;
@@ -87,7 +131,7 @@ export default function HomeScreen() {
           .from('venue_candidates')
           .select('photo_urls')
           .eq('plan_id', plan.id)
-          .eq('google_place_id', plan.selected_place_id)
+          .eq('place_id', plan.selected_place_id)
           .single();
         heroPhoto = (venue?.photo_urls as string[] | null)?.[0];
       }
@@ -131,12 +175,35 @@ export default function HomeScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} />
+        <SkeletonList />
       ) : plans.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No plans yet</Text>
-          <Text style={styles.emptySub}>Tap + below to create your first plan</Text>
-        </View>
+        <ScrollView contentContainerStyle={styles.emptyScroll} showsVerticalScrollIndicator={false}>
+          <Text style={styles.emptyHeadline}>Make plans that{'\n'}actually happen.</Text>
+
+          {([
+            { icon: 'zap',       title: 'Start a plan',           sub: 'A title and a vibe is all it takes. Invite the crew with one link.' },
+            { icon: 'heart',     title: 'Swipe to pick the spot', sub: 'Everyone swipes nearby places. Most-loved spot wins — no group-chat debate.' },
+            { icon: 'map-pin',   title: 'Watch everyone pull up', sub: 'Live ETAs on a map, per plan only. See who’s close, who just left.' },
+          ] as const).map((step, i) => (
+            <View key={step.icon} style={styles.stepCard}>
+              <View style={styles.stepIcon}>
+                <Feather name={step.icon} size={20} color={COLORS.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.stepTitle}>{step.title}</Text>
+                <Text style={styles.stepSub}>{step.sub}</Text>
+              </View>
+              <Text style={styles.stepNum}>{i + 1}</Text>
+            </View>
+          ))}
+
+          <TouchableOpacity style={styles.emptyCta} onPress={() => router.push('/plan/create')} activeOpacity={0.85}>
+            <Feather name="plus" size={18} color="#fff" />
+            <Text style={styles.emptyCtaText}>Start your first plan</Text>
+          </TouchableOpacity>
+
+          {renderJoinEntry()}
+        </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -271,6 +338,8 @@ export default function HomeScreen() {
               ))}
             </>
           )}
+
+          {renderJoinEntry()}
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -453,25 +522,111 @@ const styles = StyleSheet.create({
     color: COLORS.textFaint,
   },
 
-  // Empty state
-  empty: {
-    flex: 1,
+  // Empty state / first-run walkthrough
+  emptyScroll: {
+    padding: SPACING.lg,
+    paddingTop: SPACING.xl,
+    gap: SPACING.md,
+  },
+  emptyHeadline: {
+    fontSize: 32,
+    lineHeight: 38,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+    includeFontPadding: false,
+  },
+  stepCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: SPACING.lg,
+    ...SHADOWS.card,
+  },
+  stepIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.primaryFaint,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.xl,
   },
-  emptyTitle: {
-    fontSize: FONT_SIZE.xl,
+  stepTitle: {
+    fontSize: FONT_SIZE.md,
     fontFamily: FONTS.bold,
     color: COLORS.text,
     includeFontPadding: false,
   },
-  emptySub: {
-    fontSize: FONT_SIZE.md,
+  stepSub: {
+    fontSize: FONT_SIZE.sm,
     fontFamily: FONTS.regular,
     color: COLORS.textSecondary,
-    textAlign: 'center',
+    lineHeight: 19,
+    includeFontPadding: false,
+  },
+  stepNum: {
+    fontSize: 26,
+    fontFamily: FONTS.extrabold,
+    color: COLORS.primaryLight,
+    includeFontPadding: false,
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginTop: SPACING.sm,
+    ...SHADOWS.button,
+  },
+  emptyCtaText: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONTS.bold,
+    color: '#fff',
+    includeFontPadding: false,
+  },
+
+  // Join-with-code entry
+  joinLink: { alignItems: 'center', paddingVertical: SPACING.md },
+  joinLinkText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+    includeFontPadding: false,
+  },
+  joinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  joinInput: {
+    flex: 1,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.regular,
+    color: COLORS.text,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    includeFontPadding: false,
+  },
+  joinGo: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 11,
+  },
+  joinGoText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONTS.bold,
+    color: '#fff',
     includeFontPadding: false,
   },
 });
