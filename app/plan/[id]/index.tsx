@@ -18,7 +18,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, directionsUrl } from '@/lib/affiliate';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
@@ -122,7 +122,7 @@ export default function PlanDetailScreen() {
         counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
       }
       const totalMembers = membersRes.data.length;
-      const over = [...counts.values()].filter((c) => c / totalMembers >= AUTO_SELECT_THRESHOLD);
+      const over = [...counts.values()].filter((c) => c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD);
       const maxC = over.length ? Math.max(...over) : 0;
       const leaders = over.filter((c) => c === maxC);
       setTieCount(leaders.length > 1 ? leaders.length : 0);
@@ -198,6 +198,7 @@ export default function PlanDetailScreen() {
       .insert({ plan_id: id!, inviter_user_id: currentUserId, status: 'pending', expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
       .select().single();
     if (!invite) return;
+    logEvent('invite_shared', { planId: id!, properties: { method: 'share', invite_id: invite.id, from: 'crew_row' } });
     Share.share({ message: `Pull up with us: ${plan.title}\npullup://join/${invite.token}` });
   }
 
@@ -218,6 +219,7 @@ export default function PlanDetailScreen() {
       .single();
     if (error) { Alert.alert('Could not start plan', error.message); return; }
     if (!data) { Alert.alert('Could not start plan', 'You may not have permission. Only the plan creator can start it.'); return; }
+    logEvent('plan_state_changed', { planId: id!, properties: { from: plan?.state, to: 'active' } });
     notifyMembers('plan_activated');
     fetchAll();
   }
@@ -234,6 +236,7 @@ export default function PlanDetailScreen() {
           selected_place_lng: null,
         }).eq('id', id!);
         if (error) { Alert.alert('Could not re-open voting', error.message); return; }
+        logEvent('plan_state_changed', { planId: id!, properties: { from: plan?.state, to: 'open' } });
         notifyMembers('voting_reopened');
         fetchAll();
       }},
@@ -244,7 +247,9 @@ export default function PlanDetailScreen() {
     Alert.alert('End plan?', 'This marks the plan as done for everyone.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'End it', style: 'destructive', onPress: async () => {
-        await supabase.from('plans').update({ state: 'completed' }).eq('id', id!);
+        const { data: updated, error } = await supabase.from('plans').update({ state: 'completed' }).eq('id', id!).select('id').maybeSingle();
+        if (error || !updated) { Alert.alert('Could not end plan', error?.message ?? 'Only the plan creator can do this.'); return; }
+        logEvent('plan_state_changed', { planId: id!, properties: { from: plan?.state, to: 'completed' } });
         notifyMembers('plan_ended');
         router.back();
       }},
@@ -255,7 +260,9 @@ export default function PlanDetailScreen() {
     Alert.alert('Cancel plan?', 'This cancels the plan for everyone.', [
       { text: 'Keep it', style: 'cancel' },
       { text: 'Cancel plan', style: 'destructive', onPress: async () => {
-        await supabase.from('plans').update({ state: 'cancelled' }).eq('id', id!);
+        const { data: updated, error } = await supabase.from('plans').update({ state: 'cancelled' }).eq('id', id!).select('id').maybeSingle();
+        if (error || !updated) { Alert.alert('Could not cancel plan', error?.message ?? 'Only the plan creator can do this.'); return; }
+        logEvent('plan_state_changed', { planId: id!, properties: { from: plan?.state, to: 'cancelled' } });
         notifyMembers('plan_cancelled');
         router.back();
       }},
@@ -441,7 +448,11 @@ export default function PlanDetailScreen() {
           {/* Voting card */}
           <View style={styles.votingCard}>
             <Text style={styles.votingTitle}>Find the spot</Text>
-            {swipeProgress.total > 0 ? (
+            {!plan.voting_enabled ? (
+              <Text style={styles.votingSub}>
+                {isHost ? 'Host mode: you pick the spot.' : 'The host is picking the spot. Suggest one if you have an idea.'}
+              </Text>
+            ) : swipeProgress.total > 0 ? (
               <>
                 <Text style={styles.votingSub}>
                   {swipeProgress.swiped} of {swipeProgress.total} venues swiped
@@ -451,7 +462,15 @@ export default function PlanDetailScreen() {
             ) : (
               <Text style={styles.votingSub}>Browse venues and vote with your crew</Text>
             )}
-            <HButton label="Swipe venues" variant="primary" size="md" fullWidth onPress={() => router.push(`/plan/${id}/venues`)} />
+            {(plan.voting_enabled || isHost) && (
+              <HButton
+                label={plan.voting_enabled ? 'Swipe venues' : 'Pick the spot'}
+                variant="primary"
+                size="md"
+                fullWidth
+                onPress={() => router.push(`/plan/${id}/venues`)}
+              />
+            )}
             <TouchableOpacity onPress={() => router.push(`/plan/${id}/suggest`)} style={styles.suggestLink}>
               <Feather name="plus" size={13} color={COLORS.primary} strokeWidth={2.4} />
               <Text style={styles.suggestLinkText}>Suggest a place</Text>

@@ -8,7 +8,7 @@ import {
   VENUE_PROVIDER,
 } from '@/constants';
 
-type ActiveSession = { id: string; plan_id: string };
+type ActiveSession = { id: string; plan_id: string; expires_at: string };
 
 let requestSync: (() => void) | null = null;
 
@@ -33,6 +33,7 @@ export function refreshLocationSharing() {
 export function useLocationSharing(userId: string | null) {
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const sessionsRef = useRef<ActiveSession[]>([]);
+  const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -90,12 +91,20 @@ export function useLocationSharing(userId: string | null) {
     async function sync() {
       const { data } = await supabase
         .from('location_share_sessions')
-        .select('id, plan_id')
+        .select('id, plan_id, expires_at')
         .eq('user_id', uid)
         .eq('status', 'active')
         .gt('expires_at', new Date().toISOString());
       if (!alive) return;
       sessionsRef.current = (data ?? []) as ActiveSession[];
+      // Re-sync the moment the soonest session expires, so the watch stops on
+      // time even if no realtime/app-state event arrives.
+      if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+      expiryTimerRef.current = null;
+      if (sessionsRef.current.length > 0) {
+        const soonest = Math.min(...sessionsRef.current.map((x) => new Date(x.expires_at).getTime()));
+        expiryTimerRef.current = setTimeout(sync, Math.max(soonest - Date.now(), 0) + 1000);
+      }
       if (sessionsRef.current.length > 0) {
         startWatch();
       } else {
@@ -126,6 +135,7 @@ export function useLocationSharing(userId: string | null) {
 
     return () => {
       alive = false;
+      if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
       if (requestSync === sync) requestSync = null;
       stopWatch();
       supabase.removeChannel(channel);

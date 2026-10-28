@@ -12,6 +12,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { logEvent } from '@/lib/analytics';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
@@ -106,6 +107,7 @@ export default function InviteScreen() {
   async function copyLink() {
     const token = await getOrCreateInviteToken();
     if (!token) return;
+    logEvent('invite_shared', { planId: id!, properties: { method: 'copy' } });
     await Clipboard.setStringAsync(`pullup://join/${token}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -114,6 +116,7 @@ export default function InviteScreen() {
   async function shareLink() {
     const token = await getOrCreateInviteToken();
     if (!token) return;
+    logEvent('invite_shared', { planId: id!, properties: { method: 'share' } });
     Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\npullup://join/${token}` });
   }
 
@@ -124,6 +127,7 @@ export default function InviteScreen() {
     const token = await getOrCreateInviteToken();
     if (!token) return;
     setInvitedIds((prev) => new Set(prev).add(person.user_id));
+    logEvent('crew_invited', { planId: id!, properties: { invitee_id: person.user_id } });
     supabase.functions.invoke('notify', {
       body: {
         event: 'crew_invited',

@@ -116,6 +116,7 @@ export type LocationShareSessionRow = {
   stopped_at: string | null;
   consent_version: string;
   share_mode: ShareMode;
+  eta_only: boolean;
 };
 
 export type LocationPointRow = {
@@ -210,7 +211,7 @@ export type Database = {
       };
       location_share_sessions: {
         Row: LocationShareSessionRow;
-        Insert: OptionalFields<Omit<LocationShareSessionRow, 'id' | 'started_at'>, 'stopped_at' | 'status' | 'share_mode'>;
+        Insert: OptionalFields<Omit<LocationShareSessionRow, 'id' | 'started_at'>, 'stopped_at' | 'status' | 'share_mode' | 'eta_only'>;
         Update: Partial<Omit<LocationShareSessionRow, 'id' | 'started_at'>>;
         Relationships: [];
       };
@@ -245,7 +246,7 @@ export type Database = {
     Functions: {
       join_plan: {
         Args: { p_token: string };
-        Returns: { plan_id: string; joined: boolean }[];
+        Returns: { plan_id: string; joined: boolean; invite_id: string; inviter_user_id: string }[];
       };
     };
     Enums: {

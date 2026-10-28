@@ -13,7 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AUTO_SELECT_THRESHOLD } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
 import { NavHead, Skeleton } from '@/components/ui';
 import type { VenueCandidateRow } from '@/types/database';
 
@@ -61,7 +61,7 @@ export default function FaceoffScreen() {
       counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
     }
     const over = [...counts.entries()].filter(
-      ([, c]) => totalMembers && c / totalMembers >= AUTO_SELECT_THRESHOLD
+      ([, c]) => totalMembers && c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD
     );
     const maxCount = over.length ? Math.max(...over.map(([, c]) => c)) : 0;
     const leaderIds = over.filter(([, c]) => c === maxCount).map(([vid]) => vid);

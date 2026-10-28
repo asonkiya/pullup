@@ -182,9 +182,14 @@ Deno.serve(async (req) => {
       title,
       body,
       sound: 'default' as const,
-      data: payload.extra?.join_token
-        ? { plan_id, join_token: payload.extra.join_token }
-        : { plan_id },
+      data: {
+        plan_id,
+        event,
+        ...(payload.extra?.join_token ? { join_token: payload.extra.join_token } : {}),
+        // Where a tap should land when it isn't the plan screen.
+        ...(event === 'chat_message' ? { route: `/plan/${plan_id}/chat` } : {}),
+        ...(event === 'venue_tie' ? { route: `/plan/${plan_id}/faceoff` } : {}),
+      },
     };
   });
 

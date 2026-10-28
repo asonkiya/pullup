@@ -130,8 +130,14 @@ Deno.serve(async (req) => {
   // Existing snapshots — used both to flag stopped sharers and as the cache.
   const { data: existing } = await adminClient
     .from('eta_snapshots')
-    .select('user_id, destination_place_id, mode, status, computed_at, origin_lat, origin_lng')
+    .select('user_id, destination_place_id, mode, status, computed_at')
     .eq('plan_id', plan_id);
+  // Routing origins live in a server-only table (snapshots are crew-readable).
+  const { data: lastOrigins } = await adminClient
+    .from('eta_origins')
+    .select('user_id, lat, lng')
+    .eq('plan_id', plan_id);
+  const lastOriginByUser = new Map((lastOrigins ?? []).map((o) => [o.user_id, o]));
 
   // Mark snapshots for members who stopped sharing (or whose session expired)
   // so their ETA reads "not sharing" instead of freezing at the last value.
@@ -183,10 +189,11 @@ Deno.serve(async (req) => {
   const staleOrigins = origins.filter((o) => {
     const snap = byUser.get(o.user_id);
     if (!snap || snap.status !== 'ok' || snap.destination_place_id !== plan.selected_place_id || snap.mode !== plan.travel_mode_default) return true;
-    if (snap.origin_lat == null || snap.origin_lng == null) return true;
+    const last = lastOriginByUser.get(o.user_id);
+    if (!last) return true;
     const ageS = (nowMs - new Date(snap.computed_at).getTime()) / 1000;
     if (ageS < FRESH_S) return false;
-    return ageS >= STALE_S || haversineMeters(o.lat, o.lng, snap.origin_lat, snap.origin_lng) >= MOVE_M;
+    return ageS >= STALE_S || haversineMeters(o.lat, o.lng, last.lat, last.lng) >= MOVE_M;
   });
   const cached = origins.length - staleOrigins.length;
 
@@ -212,12 +219,14 @@ Deno.serve(async (req) => {
     status: 'ok',
     mode: plan.travel_mode_default,
     computed_at: now,
-    origin_lat: originByUser.get(r.user_id)?.lat ?? null,
-    origin_lng: originByUser.get(r.user_id)?.lng ?? null,
   }));
+  const originRows = results
+    .filter((r) => originByUser.has(r.user_id))
+    .map((r) => ({ plan_id, user_id: r.user_id, lat: originByUser.get(r.user_id)!.lat, lng: originByUser.get(r.user_id)!.lng, updated_at: now }));
 
   if (snapshots.length > 0) {
     await adminClient.from('eta_snapshots').upsert(snapshots, { onConflict: 'plan_id,user_id' });
+    await adminClient.from('eta_origins').upsert(originRows, { onConflict: 'plan_id,user_id' });
     await adminClient.channel(`eta-${plan_id}`).send({
       type: 'broadcast',
       event: 'eta_updated',

@@ -79,9 +79,13 @@ Deno.serve(async (req) => {
 
   let plan_id: string;
   let provider: Provider = 'google';
+  let fallbackAnchor: { lat: number; lng: number } | null = null;
   try {
     const body = await req.json();
     plan_id = body.plan_id;
+    if (typeof body.anchor_lat === 'number' && typeof body.anchor_lng === 'number') {
+      fallbackAnchor = { lat: body.anchor_lat, lng: body.anchor_lng };
+    }
     if (body.provider === 'mapbox' || body.provider === 'google') provider = body.provider;
   } catch {
     return new Response('Bad request', { status: 400 });
@@ -104,7 +108,20 @@ Deno.serve(async (req) => {
 
   if (planError || !plan) return new Response('Plan not found', { status: 404 });
 
-  const { anchor_lat, anchor_lng, vibe, travel_mode_default } = plan;
+  let { anchor_lat, anchor_lng } = plan;
+  const { vibe, travel_mode_default } = plan;
+  // Plan has no area yet: adopt the caller's position. Done here with the
+  // service role because only the creator can update plans via RLS, and a
+  // guest is often the first to open the deck.
+  if ((anchor_lat == null || anchor_lng == null) && fallbackAnchor) {
+    anchor_lat = fallbackAnchor.lat;
+    anchor_lng = fallbackAnchor.lng;
+    await adminClient
+      .from('plans')
+      .update({ anchor_lat, anchor_lng })
+      .eq('id', plan_id)
+      .is('anchor_lat', null);
+  }
   if (anchor_lat == null || anchor_lng == null) {
     return new Response(JSON.stringify({ inserted: 0, reason: 'no anchor set' }), {
       headers: { 'Content-Type': 'application/json' },

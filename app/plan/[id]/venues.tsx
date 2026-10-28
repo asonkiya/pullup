@@ -27,7 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER, AUTO_SELECT_THRESHOLD } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
 import { NavHead, ProgressBar, AvatarRow, Skeleton, HButton } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
 import type { VenueCandidateRow } from '@/types/database';
@@ -105,35 +105,76 @@ export default function VenuesScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [id]);
 
-  async function loadVenues() {
-    setLoading(true);
-    setError(null);
-    const { data: existing } = await supabase
+  async function fetchCandidates(): Promise<VenueWithSuggester[]> {
+    const { data } = await supabase
       .from('venue_candidates')
       .select('*, suggester:users!suggested_by_user_id(display_name)')
       .eq('plan_id', id!)
       .order('created_at');
-    const enriched: VenueWithSuggester[] = (existing ?? []).map((row: any) => ({
+    return (data ?? []).map((row: any) => ({
       ...row,
       suggester_name: row.suggester?.display_name ?? null,
     }));
-    const hasNearbySearch = enriched.some((r) => r.source === 'nearby_search');
-    if (enriched.length > 0 && hasNearbySearch) {
-      setCandidates(enriched);
-      setLoading(false);
+  }
+
+  // Closest first, then resume where this user left off: cards they've
+  // already swiped go to the front and the deck starts after them.
+  async function showDeck(rows: VenueWithSuggester[]) {
+    const sorted = rows.slice().sort((a, b) => {
+      if (a.eta_seconds == null && b.eta_seconds == null) return 0;
+      if (a.eta_seconds == null) return 1;
+      if (b.eta_seconds == null) return -1;
+      return a.eta_seconds - b.eta_seconds;
+    });
+    const { data: { user } } = await supabase.auth.getUser();
+    let swiped = new Set<string>();
+    if (user) {
+      const { data: mine } = await supabase
+        .from('venue_swipes')
+        .select('venue_candidate_id')
+        .eq('plan_id', id!)
+        .eq('user_id', user.id);
+      swiped = new Set((mine ?? []).map((r) => r.venue_candidate_id));
+    }
+    const done = sorted.filter((c) => swiped.has(c.id));
+    const todo = sorted.filter((c) => !swiped.has(c.id));
+    setCandidates([...done, ...todo]);
+    setIdx(done.length);
+    setLoading(false);
+  }
+
+  async function loadVenues() {
+    setLoading(true);
+    setError(null);
+    const existing = await fetchCandidates();
+    if (existing.some((r) => r.source === 'nearby_search')) {
+      await showDeck(existing);
       return;
     }
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      setError('Location permission is needed to find venues near you.');
-      setLoading(false);
-      return;
+
+    // Only fall back to the device's position when the plan has no area yet.
+    const { data: plan } = await supabase.from('plans').select('anchor_lat, anchor_lng').eq('id', id!).single();
+    let anchor: { anchor_lat: number; anchor_lng: number } | null = null;
+    if (plan?.anchor_lat == null || plan?.anchor_lng == null) {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Location is off, so we can\'t find spots near you. Turn it on in Settings, or have the host pick an area.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        anchor = { anchor_lat: pos.coords.latitude, anchor_lng: pos.coords.longitude };
+      } catch {
+        setError('Couldn\'t get your location. Make sure Location Services are on and try again.');
+        setLoading(false);
+        return;
+      }
     }
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    await supabase.from('plans').update({ anchor_lat: pos.coords.latitude, anchor_lng: pos.coords.longitude }).eq('id', id!);
+
     const { data: { session } } = await supabase.auth.getSession();
     const { error: fnError } = await supabase.functions.invoke('search-venues', {
-      body: { plan_id: id!, provider: VENUE_PROVIDER },
+      body: { plan_id: id!, provider: VENUE_PROVIDER, ...anchor },
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (fnError) {
@@ -141,24 +182,13 @@ export default function VenuesScreen() {
       setLoading(false);
       return;
     }
-    const { data: fresh } = await supabase
-      .from('venue_candidates')
-      .select('*, suggester:users!suggested_by_user_id(display_name)')
-      .eq('plan_id', id!)
-      .order('created_at');
-    const freshEnriched: VenueWithSuggester[] = (fresh ?? []).map((row: any) => ({
-      ...row,
-      suggester_name: row.suggester?.display_name ?? null,
-    }));
-    const sorted = freshEnriched.slice().sort((a, b) => {
-      if (a.eta_seconds == null && b.eta_seconds == null) return 0;
-      if (a.eta_seconds == null) return 1;
-      if (b.eta_seconds == null) return -1;
-      return a.eta_seconds - b.eta_seconds;
-    });
-    if (!sorted.length) setError('No venues found nearby. Try setting an anchor location for this plan.');
-    setCandidates(sorted);
-    setLoading(false);
+    const fresh = await fetchCandidates();
+    if (!fresh.length) {
+      setError('No venues found nearby.');
+      setLoading(false);
+      return;
+    }
+    await showDeck(fresh);
   }
 
   async function checkAutoSelect(venue: VenueWithSuggester) {
@@ -167,7 +197,7 @@ export default function VenuesScreen() {
       supabase.from('venue_swipes').select('*', { count: 'exact', head: true }).eq('venue_candidate_id', venue.id).eq('direction', 'right'),
     ]);
     if (!totalMembers || !rightSwipes) return;
-    if (rightSwipes / totalMembers < AUTO_SELECT_THRESHOLD) return;
+    if (rightSwipes < AUTO_SELECT_MIN_VOTES || rightSwipes / totalMembers < AUTO_SELECT_THRESHOLD) return;
 
     // This venue hit threshold — but don't lock first-past-the-post if another
     // spot is equally loved. Compare against all candidates' right-swipes.
@@ -181,7 +211,7 @@ export default function VenuesScreen() {
       counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
     }
     const overThreshold = [...counts.entries()].filter(
-      ([, c]) => c / totalMembers >= AUTO_SELECT_THRESHOLD
+      ([, c]) => c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD
     );
     const maxCount = Math.max(...overThreshold.map(([, c]) => c));
     const leaders = overThreshold.filter(([, c]) => c === maxCount).map(([vid]) => vid);
@@ -250,6 +280,32 @@ export default function VenuesScreen() {
     translateX.value = withTiming(direction === 'right' ? SCREEN_W * 1.5 : -SCREEN_W * 1.5, { duration: 220 }, () => {
       runOnJS(doSwipe)(direction);
     });
+  }
+
+  // Host escape hatch when the crew stalls: lock whichever spot has the most
+  // right swipes (ties go to the closer one, since the deck is ETA-sorted).
+  async function pickTopVoted() {
+    const { data: rights } = await supabase
+      .from('venue_swipes')
+      .select('venue_candidate_id')
+      .eq('plan_id', id!)
+      .eq('direction', 'right');
+    const counts = new Map<string, number>();
+    for (const r of rights ?? []) counts.set(r.venue_candidate_id, (counts.get(r.venue_candidate_id) ?? 0) + 1);
+    let top: VenueWithSuggester | null = null;
+    let topCount = 0;
+    for (const c of candidates) {
+      const n = counts.get(c.id) ?? 0;
+      if (n > topCount || (n === topCount && top && (c.eta_seconds ?? Infinity) < (top.eta_seconds ?? Infinity))) {
+        top = c;
+        topCount = n;
+      }
+    }
+    if (!top || topCount === 0) {
+      Alert.alert('No votes yet', 'Nobody has liked a spot yet. Swipe through and pick one yourself.');
+      return;
+    }
+    selectVenue(top);
   }
 
   async function selectVenue(venue: VenueWithSuggester, onCancel?: () => void) {
@@ -372,9 +428,22 @@ export default function VenuesScreen() {
         ) : done ? (
           <View style={styles.center}>
             <Text style={styles.emptyTitle}>All done swiping!</Text>
-            <Text style={styles.emptySub}>Check back to see what the group picked.</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={() => setIdx(0)}>
-              <Text style={styles.retryText}>Start over</Text>
+            <Text style={styles.emptySub}>
+              {isHost && votingEnabled
+                ? 'Waiting on the crew? You can lock the top-voted spot now.'
+                : "We'll ping you when the crew picks a spot."}
+            </Text>
+            {isHost && votingEnabled ? (
+              <TouchableOpacity style={styles.retryBtn} onPress={pickTopVoted}>
+                <Text style={styles.retryText}>Pick the top-voted spot</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
+                <Text style={styles.retryText}>Back to plan</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => setIdx(0)} hitSlop={10} style={{ marginTop: SPACING.md }}>
+              <Text style={styles.startOverLink}>Start over</Text>
             </TouchableOpacity>
           </View>
         ) : current ? (
@@ -535,6 +604,11 @@ export default function VenuesScreen() {
                 />
               </View>
             )}
+            {isHost && votingEnabled && (
+              <TouchableOpacity onPress={() => selectVenue(current)} hitSlop={10} style={styles.hostPickLink}>
+                <Text style={styles.startOverLink}>Host: just pick this one</Text>
+              </TouchableOpacity>
+            )}
           </>
         ) : null}
       </View>
@@ -671,6 +745,8 @@ const styles = StyleSheet.create({
   mapsLink: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.primary, includeFontPadding: false },
 
   actions: { flexDirection: 'row', gap: 36, paddingBottom: SPACING.md },
+  hostPickLink: { marginTop: -SPACING.sm, paddingBottom: SPACING.sm },
+  startOverLink: { fontSize: FONT_SIZE.sm, fontFamily: FONTS.semibold, color: COLORS.textSecondary, includeFontPadding: false },
   hostActions: {
     width: '100%',
     gap: SPACING.sm,
