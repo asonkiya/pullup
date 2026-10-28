@@ -1,12 +1,14 @@
 # TODO
 
-## After App Store approval (immediate)
-- [ ] OTA update (`eas update --branch production`) shipping the committed client fixes:
-      Book-a-table removal, Google Maps navigate flow, "Not sharing" ETA label,
-      instant snapshot marking on stop-share. Hold until approval so nothing
-      changes under the reviewer.
-- [ ] Clean demo account test data before/after any manual testing (demo world
-      must stay: 4 documented plans).
+## Resubmission (build 6 rejected, Oct 2026)
+- [ ] Record the rejection reason and guideline here, and fix it first.
+- [ ] No OTA needed: the next binary includes everything on `main`
+      (security fix, join_plan flow, friction basics, ETA-only).
+- [ ] Re-test the demo account against the new RLS and join flow (the demo
+      world must stay at 4 documented plans), then update `docs/review-notes.md`.
+- [ ] Decide which build-7 native items ship in this binary (see below and
+      `docs/friction-audit.md`). Note: background location ("Always") adds
+      review scrutiny, so it needs a clear review note and a permission primer.
 
 ## Build 7 (needs a new native build)
 - [ ] **Universal links for invites.** Replace `pullup://join/<token>` shares with
