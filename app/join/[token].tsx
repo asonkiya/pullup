@@ -23,23 +23,27 @@ export default function JoinScreen() {
       router.replace('/(auth)/login');
       return;
     }
-    const { data: invite } = await supabase.from('plan_invites').select('*').eq('token', tok).eq('status', 'pending').maybeSingle();
-    if (!invite) { setErrorMsg('This invite link is invalid or has already been used.'); setStatus('error'); return; }
-    if (new Date(invite.expires_at) < new Date()) { setErrorMsg('This invite link has expired. Ask the host to send a new one.'); setStatus('error'); return; }
-    const { data: existing } = await supabase.from('plan_members').select('id').eq('plan_id', invite.plan_id).eq('user_id', user.id).maybeSingle();
-    if (!existing) {
-      const { error: memberError } = await supabase.from('plan_members').insert({ plan_id: invite.plan_id, user_id: user.id, role: 'member', rsvp_status: 'going' });
-      if (memberError) { setErrorMsg('Could not join the plan. Try again.'); setStatus('error'); return; }
-      logEvent('plan_joined', { planId: invite.plan_id });
+    // join_plan validates the token server-side and is idempotent, so a link
+    // works for everyone it's shared with until it expires.
+    const { data, error } = await supabase.rpc('join_plan', { p_token: tok }).single();
+    if (error || !data) {
+      setErrorMsg(error?.message.includes('invalid_or_expired')
+        ? 'This invite link is invalid or has expired. Ask the host to send a new one.'
+        : 'Could not join the plan. Try again.');
+      setStatus('error');
+      return;
     }
-    await supabase.from('plan_invites').update({ status: 'accepted' }).eq('id', invite.id);
+    const { plan_id: planId, joined } = data;
     await SecureStore.deleteItemAsync('pending_join_token');
-    const { data: userRow } = await supabase.from('users').select('display_name').eq('id', user.id).single();
-    const { data: planRow } = await supabase.from('plans').select('title').eq('id', invite.plan_id).single();
-    supabase.functions.invoke('notify', {
-      body: { event: 'member_joined', plan_id: invite.plan_id, actor_user_id: user.id, extra: { actor_name: userRow?.display_name ?? 'Someone', plan_title: planRow?.title ?? 'a plan' } },
-    });
-    router.replace(`/plan/${invite.plan_id}`);
+    if (joined) {
+      logEvent('plan_joined', { planId });
+      const { data: userRow } = await supabase.from('users').select('display_name').eq('id', user.id).single();
+      const { data: planRow } = await supabase.from('plans').select('title').eq('id', planId).single();
+      supabase.functions.invoke('notify', {
+        body: { event: 'member_joined', plan_id: planId, actor_user_id: user.id, extra: { actor_name: userRow?.display_name ?? 'Someone', plan_title: planRow?.title ?? 'a plan' } },
+      });
+    }
+    router.replace(`/plan/${planId}`);
   }
 
   if (status === 'loading') {

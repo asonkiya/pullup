@@ -186,7 +186,7 @@ export type Database = {
       };
       plan_invites: {
         Row: PlanInviteRow;
-        Insert: OptionalFields<Omit<PlanInviteRow, 'id'>, 'invitee_contact' | 'status'>;
+        Insert: OptionalFields<Omit<PlanInviteRow, 'id'>, 'token' | 'invitee_contact' | 'status'>;
         Update: Partial<Omit<PlanInviteRow, 'id'>>;
         Relationships: [];
       };
@@ -243,7 +243,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      join_plan: {
+        Args: { p_token: string };
+        Returns: { plan_id: string; joined: boolean }[];
+      };
     };
     Enums: {
       [_ in never]: never;

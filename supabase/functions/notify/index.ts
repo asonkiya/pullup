@@ -104,17 +104,37 @@ Deno.serve(async (req) => {
   if (!event || !plan_id || !actor_user_id) {
     return new Response('Missing required fields', { status: 400 });
   }
+  if (actor_user_id !== user.id) return new Response('Forbidden', { status: 403 });
 
   const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  const { data: membership } = await adminClient
+    .from('plan_members')
+    .select('id')
+    .eq('plan_id', plan_id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (!membership) return new Response('Forbidden', { status: 403 });
 
   let recipients: Array<{ user_id: string; role: string; users: { push_token: string | null } | null }>;
 
   if (payload.recipient_user_ids?.length) {
-    // Explicit recipients (people not yet in the plan)
+    // Explicit recipients (people not yet in the plan). Only allow people the
+    // caller has shared a plan with, so this can't push arbitrary users.
+    const { data: myPlans } = await adminClient
+      .from('plan_members')
+      .select('plan_id')
+      .eq('user_id', user.id);
+    const { data: crewRows } = await adminClient
+      .from('plan_members')
+      .select('user_id')
+      .in('plan_id', (myPlans ?? []).map((r) => r.plan_id))
+      .in('user_id', payload.recipient_user_ids);
+    const allowedIds = [...new Set((crewRows ?? []).map((r) => r.user_id))];
     const { data: users, error: usersError } = await adminClient
       .from('users')
       .select('id, push_token')
-      .in('id', payload.recipient_user_ids);
+      .in('id', allowedIds);
     if (usersError || !users) {
       return new Response(JSON.stringify({ sent: 0, error: 'Failed to fetch recipients' }), {
         headers: { 'Content-Type': 'application/json' },

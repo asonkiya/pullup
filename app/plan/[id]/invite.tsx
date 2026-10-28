@@ -85,25 +85,27 @@ export default function InviteScreen() {
   async function getOrCreateInviteToken(): Promise<string> {
     if (inviteToken) return inviteToken;
     if (!uid || !plan) return '';
-    const token = Math.random().toString(36).slice(2, 10);
     const { data: invite } = await supabase
       .from('plan_invites')
       .insert({
         plan_id: id!,
-        token,
         inviter_user_id: uid,
         status: 'pending',
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
       .select()
       .single();
-    const finalToken = invite?.token ?? token;
-    setInviteToken(finalToken);
-    return finalToken;
+    if (!invite) {
+      Alert.alert('Could not create invite link', 'Check your connection and try again.');
+      return '';
+    }
+    setInviteToken(invite.token);
+    return invite.token;
   }
 
   async function copyLink() {
     const token = await getOrCreateInviteToken();
+    if (!token) return;
     await Clipboard.setStringAsync(`pullup://join/${token}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -111,6 +113,7 @@ export default function InviteScreen() {
 
   async function shareLink() {
     const token = await getOrCreateInviteToken();
+    if (!token) return;
     Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\npullup://join/${token}` });
   }
 

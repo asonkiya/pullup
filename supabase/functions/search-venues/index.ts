@@ -88,6 +88,14 @@ Deno.serve(async (req) => {
   }
 
   const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  const { data: membership } = await adminClient
+    .from('plan_members')
+    .select('id')
+    .eq('plan_id', plan_id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (!membership) return new Response('Forbidden', { status: 403 });
   const { data: plan, error: planError } = await adminClient
     .from('plans')
     .select('anchor_lat, anchor_lng, vibe, travel_mode_default')
