@@ -121,3 +121,70 @@ Severity: **H** = loses users or breaks a core loop · **M** = real drag ·
 Two database access-policy issues in the invites table turned up during this
 audit. They have been reported to the maintainer and should be fixed before
 the A1 rework, because the fix touches the same rules.
+
+---
+
+# Analysis: lowering friction and building a habit
+
+## How to think about it
+A habit needs three things: a **trigger** that arrives without anyone
+remembering, an **action** small enough to do half-asleep, and a **payoff**
+that makes the next trigger welcome. Pull Up today has no triggers (F1, F2, F4),
+an action that's expensive for exactly the least motivated person, the guest
+(A2, A3, B1–B5), and a payoff that never fires (F3). The crew, not the single
+user, is the unit that has to come back.
+
+Four rules for every change below:
+1. **Guests do almost nothing.** One tap from the group chat to a vote, with no
+   install, no account and no location prompt.
+2. **Defaults instead of decisions.** Infer the title, time and area. Remember
+   the last crew, vibe and mode. Never make a field required that could be
+   guessed.
+3. **The app moves the plan forward, not the host.** Start, remind, nudge, end
+   and recap on a schedule. The host's job is to tap "yes".
+4. **Ask for permission when the benefit is obvious.** Ask for notifications
+   after the user creates or joins a plan; ask for location at "I'm leaving".
+
+## Workstreams (each lists the audit items it resolves)
+
+| # | Workstream | Resolves | Ships via | Effort |
+|---|---|---|---|---|
+| 1 | **Fix what's broken**: resume the pending join after signup; route push taps that cold-start the app; at least 2 voters before auto-lock; guests can load the deck (pass coordinates); hide "Swipe" from guests in host mode; GPS error handling; default to signup when an invite is pending; expire share sessions; date-chip bugs; deck remembers what you've swiped | A3, A4, F5, D1, D3, D4, D7, D8, B4, C5, E6, D10 | OTA | 2–3 days |
+| 2 | **Measure**: `app_open`, `invite_shared`, `plan_joined{source,inviter}`, `push_opened{event}`, `plan_state_changed`, a crew key | G1–G3 | OTA | 1 day |
+| 3 | **Plans run themselves** (pg_cron + notify): auto-start at the plan time; reminders the day before, 1h before and "time to leave" (from ETA); a "3 haven't swiped" nudge to the host with **"Just pick it"**; auto-end ~4h later, then the recap push | E1, E4, F1, F2, D2, D5, D6, F6 | Backend + OTA | 3–5 days |
+| 4 | **One link that works everywhere**: an https universal link; a **web guest page** (see the plan, swipe, Open in Maps, no install); a rich link preview; share text with the host name, time and place; "Join with code" detects the clipboard | A2, A5, A7, A9, A10, B1/B2/B5 for guests | Build 7 + small web app | 1–2 weeks |
+| 5 | **Less to fill in**: inferred title ("Drinks · Tonight"); last vibe, mode and area remembered; area field (TODO); **crew picker at create** with "invite everyone"; push-less crew members fall back to a share link | C1–C3, A8, F7, B6 | OTA | 3–4 days |
+| 6 | **Day-of in one tap**: "I'm leaving" starts sharing; "You here?" near the venue; push permission primer; Sign in with Apple + magic link; decide on **background location** (needs "Always" permission and a native build) | E2, E3, E5, E7, B1, B3 | Build 7 | 3–5 days |
+| 7 | **Payoff and next trigger**: a real recap (who arrived first or last, venue, photos) with a shareable image card; "Same crew again?" push ~a week later on the same weekday; a "Your crews" row on home with one-tap **"Again"**; an optional **crew ritual** ("every Thursday": a draft plan made the day before, one tap to send) | F3, F4, F7, F8, F11 | OTA + cron | 1 week |
+
+Not scheduled (low value): D11–D14, C6, A11, A12, F12, chat push
+grouping (E8; do it alongside workstream 3).
+
+## Order
+1. **Now:** deploy the security fix and ship workstreams 1 and 2 in one OTA,
+   once build 6's review status is known.
+2. **Next:** workstream 3. It's backend-heavy and makes every existing plan
+   behave like a habit loop, with no new native build.
+3. **Build 7:** workstreams 4 and 6 together (universal links, the guest page,
+   Apple sign-in, the permission primer and the background-location call all
+   need native changes).
+4. **Then:** workstreams 5 and 7, the habit layer: crews, ritual, recap.
+
+## Targets after this work
+| Journey | Today | Target |
+|---|---|---|
+| Guest without app: link → voted | 1 install, 16–20 taps, 3 typed, 2 prompts | **0 installs, 2–3 taps, 1 typed (name), 0 prompts** |
+| Host: second plan with the same crew | Same as a first plan | **2 taps** ("Again" → Send) |
+| Day-of: voted → sharing ETA | 6–8 taps, 2 waits on the host | **1 tap** ("I'm leaving" from the reminder push) |
+| Plans reaching the recap | Almost none (manual end only) | **All** (auto-end) |
+
+## Open decisions
+- **Background location**: real-time ETAs while navigating need "Always"
+  permission, which means more App Review scrutiny and more privacy questions.
+  The alternative is to share "left at / ETA" once and refresh on app open.
+- **The guest web page**: host it on a custom domain (~$10/yr) or on GitHub
+  Pages. Is a name-only, no-account guest identity acceptable?
+- **The in-app chat**: keep it or make it secondary to the group chat (per the
+  research).
+- **Email confirmation**: check whether it's on in Supabase Auth; turning it off
+  removes a major drop-off point.
