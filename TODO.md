@@ -28,9 +28,6 @@
 - [ ] Notification tap should deep-link to the relevant plan/chat (verify during
       testing where it currently lands).
 
-- [ ] Host mode (`plans.voting_enabled`; migration applied to prod 2026-10-28):
-      swipe gestures still record votes for the host in host mode — consider
-      disabling the swipe deck there.
 
 ### UX from the 2-phone field test (2026-09-03)
 - [ ] **Anchor/area picking.** Today the search area is either an exact venue or

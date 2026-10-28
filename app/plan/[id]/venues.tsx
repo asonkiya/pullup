@@ -225,6 +225,18 @@ export default function VenuesScreen() {
   function doSwipe(direction: 'right' | 'left') {
     const venue = candidates[idx];
     if (!venue || !uid) return;
+    // Host mode: no votes recorded. Right = pick this spot, left = skip it.
+    if (!votingEnabled) {
+      if (direction === 'right') {
+        selectVenue(venue, () => {
+          translateX.value = withSpring(0, { damping: 15, stiffness: 180 });
+          translateY.value = withSpring(0, { damping: 15, stiffness: 180 });
+        });
+      } else {
+        setIdx((i) => i + 1);
+      }
+      return;
+    }
     supabase.from('venue_swipes').upsert({
       plan_id: id!, user_id: uid, venue_candidate_id: venue.id, direction,
     }).then(() => {
@@ -240,9 +252,9 @@ export default function VenuesScreen() {
     });
   }
 
-  async function selectVenue(venue: VenueWithSuggester) {
+  async function selectVenue(venue: VenueWithSuggester, onCancel?: () => void) {
     Alert.alert('Lock this venue?', `Set "${venue.name}" as the destination?`, [
-      { text: 'Cancel', style: 'cancel' },
+      { text: 'Cancel', style: 'cancel', onPress: onCancel },
       { text: 'Lock it in', onPress: async () => {
         await supabase.from('plans').update({
           selected_place_id: venue.place_id, selected_place_name: venue.name,
@@ -257,7 +269,7 @@ export default function VenuesScreen() {
         logEvent('venue_locked', { planId: id!, properties: { source: 'manual' } });
         router.back();
       }},
-    ]);
+    ], { cancelable: true, onDismiss: onCancel });
   }
 
   const panGesture = Gesture.Pan()
@@ -390,10 +402,10 @@ export default function VenuesScreen() {
                 <Animated.View style={[styles.card, styles.frontCard, { width: CARD_W }, cardStyle]}>
                   {/* LIKE / NOPE stamps */}
                   <Animated.View style={[styles.stamp, styles.likeStamp, likeStampStyle]}>
-                    <Text style={[styles.stampText, { color: COLORS.success }]}>LIKE</Text>
+                    <Text style={[styles.stampText, { color: COLORS.success }]}>{votingEnabled ? 'LIKE' : 'PICK'}</Text>
                   </Animated.View>
                   <Animated.View style={[styles.stamp, styles.nopeStamp, nopeStampStyle]}>
-                    <Text style={[styles.stampText, { color: COLORS.error }]}>NOPE</Text>
+                    <Text style={[styles.stampText, { color: COLORS.error }]}>{votingEnabled ? 'NOPE' : 'SKIP'}</Text>
                   </Animated.View>
 
                   {/* Suggested-by pill */}
