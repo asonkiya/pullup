@@ -51,6 +51,28 @@ function computeScheduled(when: WhenChip, exactDate: Date | null): string | null
   return null;
 }
 
+const VIBE_NOUNS: Record<string, string> = {
+  Drinks: 'Drinks', Party: 'Party', Movie: 'Movie', Coffee: 'Coffee',
+  Gaming: 'Game night', Active: 'Workout',
+};
+
+// Name used when the host doesn't type one: "Dinner tonight", "Coffee at Lantern".
+function autoTitle(vibe: string, when: WhenChip, exactDate: Date | null, placeName: string | null): string {
+  const iso = computeScheduled(when, exactDate);
+  const at = iso ? new Date(iso) : null;
+  let noun = VIBE_NOUNS[vibe] ?? 'Hangout';
+  if (vibe === 'Food') {
+    const h = at?.getHours() ?? new Date().getHours();
+    noun = h < 11 ? 'Breakfast' : h < 16 ? 'Lunch' : 'Dinner';
+  }
+  if (placeName) return `${noun} at ${placeName}`;
+  if (when === 'tonight') return `${noun} tonight`;
+  if (when === 'tomorrow') return `${noun} tomorrow`;
+  if (when === 'weekend') return `${noun} this weekend`;
+  if (when === 'exact' && at) return `${noun} ${at.toLocaleDateString(undefined, { weekday: 'long' })}`;
+  return noun;
+}
+
 export default function CreatePlanScreen() {
   const [title, setTitle]       = useState('');
   const [vibe, setVibe]         = useState('');
@@ -62,8 +84,9 @@ export default function CreatePlanScreen() {
   const [loading, setLoading]   = useState(false);
   const router = useRouter();
 
+  const defaultTitle = autoTitle(vibe, when, exactDate, place?.name ?? null);
+
   async function createPlan() {
-    if (!title.trim()) { Alert.alert('Give your plan a name'); return; }
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
@@ -74,7 +97,7 @@ export default function CreatePlanScreen() {
       .from('plans')
       .insert({
         creator_user_id: user.id,
-        title: title.trim(),
+        title: title.trim() || defaultTitle,
         state: place ? 'venue_locked' : 'open',
         scheduled_for: scheduledFor,
         travel_mode_default: 'drive',
@@ -158,7 +181,7 @@ export default function CreatePlanScreen() {
           {/* Hero copy */}
           <View style={styles.heroText}>
             <Text style={styles.display}>What's the move?</Text>
-            <Text style={styles.sub}>Name it anything — you can vote on the spot later.</Text>
+            <Text style={styles.sub}>Tap a vibe and a time. Name it if you want to.</Text>
           </View>
 
           {/* Title input */}
@@ -167,10 +190,9 @@ export default function CreatePlanScreen() {
               style={styles.titleInput}
               value={title}
               onChangeText={setTitle}
-              placeholder="Dinner at that new spot…"
+              placeholder={defaultTitle}
               placeholderTextColor={COLORS.textFaint}
               maxLength={80}
-              autoFocus
             />
           </View>
 
@@ -268,9 +290,9 @@ export default function CreatePlanScreen() {
           {/* Create button */}
           <View style={styles.footer}>
             <TouchableOpacity
-              style={[styles.createBtn, (!title.trim() || loading) && styles.createBtnDisabled]}
+              style={[styles.createBtn, loading && styles.createBtnDisabled]}
               onPress={createPlan}
-              disabled={!title.trim() || loading}
+              disabled={loading}
               activeOpacity={0.85}
             >
               <Text style={styles.createBtnText}>{loading ? 'Creating…' : 'Create plan'}</Text>

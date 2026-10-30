@@ -149,7 +149,18 @@ Deno.serve(async (req) => {
         ? await searchMapbox(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default)
         : await searchGoogle(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default);
     } catch (e) {
-      return new Response(`${provider} search error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+      // Google can fail outside our control (billing, key restrictions, quota).
+      // Shipped builds hardcode the provider, so fall back here instead.
+      if (provider !== 'google') {
+        return new Response(`${provider} search error: ${e instanceof Error ? e.message : 'unknown'}`, { status: 502 });
+      }
+      console.error('google search failed, falling back to mapbox:', e instanceof Error ? e.message : e);
+      provider = 'mapbox';
+      try {
+        rows = await searchMapbox(plan_id, anchor_lat, anchor_lng, vibe, travel_mode_default);
+      } catch (e2) {
+        return new Response(`search error: ${e2 instanceof Error ? e2.message : 'unknown'}`, { status: 502 });
+      }
     }
     if (rows.length > 0) {
       await adminClient.from('venue_search_cache').upsert({
