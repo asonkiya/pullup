@@ -22,6 +22,10 @@ import type { PlanRow } from '@/types/database';
 type MemberPreview = { display_name: string };
 type PlanWithMembers = PlanRow & { members: MemberPreview[]; heroPhoto?: string };
 
+// How long after its start time a plan nobody ended moves to Past.
+const STALE_PLANNED_MS = 3 * 3600_000;
+const STALE_ACTIVE_MS = 12 * 3600_000;
+
 export default function HomeScreen() {
   const [plans, setPlans] = useState<PlanWithMembers[]>([]);
   const [myInitial, setMyInitial] = useState('?');
@@ -143,10 +147,19 @@ export default function HomeScreen() {
     setLoading(false);
   }
 
-  const active   = plans.filter((p) => p.state === 'active');
-  const nextUp   = plans.find((p) => p.state === 'venue_locked' || p.state === 'open');
-  const upcoming = plans.filter((p) => p !== nextUp && (p.state === 'open' || p.state === 'venue_locked'));
-  const past     = plans.filter((p) => p.state === 'completed' || p.state === 'cancelled');
+  // Plans nobody ended still drop off once their time is well past.
+  const now = Date.now();
+  const isStale = (p: PlanRow) =>
+    !!p.scheduled_for &&
+    now > Date.parse(p.scheduled_for) + (p.state === 'active' ? STALE_ACTIVE_MS : STALE_PLANNED_MS);
+  const bySoonest = (a: PlanRow, b: PlanRow) =>
+    (a.scheduled_for ? Date.parse(a.scheduled_for) : Infinity) - (b.scheduled_for ? Date.parse(b.scheduled_for) : Infinity);
+
+  const active   = plans.filter((p) => p.state === 'active' && !isStale(p));
+  const planned  = plans.filter((p) => (p.state === 'open' || p.state === 'venue_locked') && !isStale(p)).sort(bySoonest);
+  const nextUp   = planned[0];
+  const upcoming = planned.slice(1);
+  const past     = plans.filter((p) => p.state === 'completed' || p.state === 'cancelled' || isStale(p));
 
   function formatCountdown(iso: string | null): string {
     if (!iso) return '';
