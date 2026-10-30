@@ -67,6 +67,15 @@ export default function VenuesScreen() {
     setPhotoIdx(0);
   }, [idx]);
 
+  // Warm the image cache so the next card's photo is ready when it slides in.
+  useEffect(() => {
+    const urls = [
+      ...((candidates[idx]?.photo_urls as string[] | null) ?? []),
+      ...[1, 2].flatMap((o) => ((candidates[idx + o]?.photo_urls as string[] | null) ?? []).slice(0, 1)),
+    ];
+    urls.forEach((u) => { Image.prefetch(u).catch(() => {}); });
+  }, [idx, candidates]);
+
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -489,7 +498,8 @@ export default function VenuesScreen() {
                   <View style={styles.photoWrap}>
                     {photos.length > 0 ? (
                       <>
-                        <Image source={{ uri: photos[photoIdx] }} style={styles.photo} resizeMode="cover" />
+                        {/* Keyed by venue: a reused Image keeps the previous venue's photo until the new one loads. */}
+                        <Image key={current.id} source={{ uri: photos[Math.min(photoIdx, photos.length - 1)] }} style={styles.photo} resizeMode="cover" />
                         {/* Story segments */}
                         {photos.length > 1 && (
                           <View style={styles.segments}>
@@ -693,7 +703,7 @@ const styles = StyleSheet.create({
   nopeStamp: { left: 20, borderColor: COLORS.error, transform: [{ rotate: '-12deg' }] },
   stampText: { fontSize: 22, fontFamily: FONTS.extrabold, includeFontPadding: false },
 
-  photoWrap: { height: PHOTO_HEIGHT, position: 'relative' },
+  photoWrap: { height: PHOTO_HEIGHT, position: 'relative', backgroundColor: COLORS.primaryLight },
   photo: { width: '100%', height: '100%' },
   photoPlaceholder: { backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
   photoPlaceholderText: { fontSize: 72, fontFamily: FONTS.extrabold, color: COLORS.primary, opacity: 0.25, includeFontPadding: false },
