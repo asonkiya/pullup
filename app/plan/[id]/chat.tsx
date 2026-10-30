@@ -44,7 +44,7 @@ export default function ChatScreen() {
     const channel = supabase
       .channel(`chat-${id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'plan_messages', filter: `plan_id=eq.${id}` }, async (payload) => {
-        const { data } = await supabase.from('plan_messages').select('*, users(*)').eq('id', payload.new.id).single();
+        const { data } = await supabase.from('plan_messages').select('*, users(id, display_name, avatar_url)').eq('id', payload.new.id).single();
         if (data) {
           setMessages((prev) => [...prev, data as unknown as MessageWithUser]);
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
@@ -55,7 +55,7 @@ export default function ChatScreen() {
   }, [id]);
 
   async function loadMessages() {
-    const { data } = await supabase.from('plan_messages').select('*, users(*)').eq('plan_id', id!).order('created_at', { ascending: true });
+    const { data } = await supabase.from('plan_messages').select('*, users(id, display_name, avatar_url)').eq('plan_id', id!).order('created_at', { ascending: true });
     setMessages((data ?? []) as unknown as MessageWithUser[]);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
   }
