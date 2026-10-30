@@ -58,7 +58,7 @@ export default function PlanDetailScreen() {
   async function fetchAll() {
     const [planRes, membersRes] = await Promise.all([
       supabase.from('plans').select('*').eq('id', id!).single(),
-      supabase.from('plan_members').select('*, users(*)').eq('plan_id', id!),
+      supabase.from('plan_members').select('*, users(id, display_name, avatar_url)').eq('plan_id', id!),
     ]);
     if (planRes.data) {
       setPlan(planRes.data);

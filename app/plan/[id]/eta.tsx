@@ -178,7 +178,7 @@ export default function EtaDashboardScreen() {
   async function fetchEta() {
     const { data } = await supabase
       .from('eta_snapshots')
-      .select('*, users(*)')
+      .select('*, users(id, display_name, avatar_url)')
       .eq('plan_id', id!)
       .order('duration_seconds', { ascending: true, nullsFirst: false });
     setEntries((data ?? []) as unknown as EtaEntry[]);
