@@ -22,8 +22,9 @@ Before building 8:
 - [x] Apple provider enabled in Supabase Auth (client ID
       `com.ahrimane.pullup`, 2026-10-31).
 - [ ] Buy the domain, then universal links (below).
-- [ ] Update `docs/review-notes.md`: location section (background while
-      sharing, no "Always"), Sign in with Apple.
+- [x] `docs/review-notes.md` and `docs/privacy-policy.md` updated for build 8
+      (they go live on merge). When submitting build 8, paste the new notes
+      into App Store Connect; the App Privacy answers don't change.
 
 After build 8 is live:
 - [ ] Move `supabase/deferred/hide_user_contact_columns.sql` into
