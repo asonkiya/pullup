@@ -17,7 +17,8 @@ import { Avatar, HButton, Label, Card } from '@/components/ui';
 import type { UserRow } from '@/types/database';
 
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<UserRow | null>(null);
+  const [profile, setProfile] = useState<Pick<UserRow, 'id' | 'display_name' | 'avatar_url' | 'created_at'> | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -29,8 +30,11 @@ export default function ProfileScreen() {
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    setPhone(user.phone ?? null);
-    const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
+    setPhone(user.phone || null);
+    setEmail(user.email || null);
+    // Email and phone come from the auth user; public.users only exposes what
+    // co-members are allowed to see.
+    const { data } = await supabase.from('users').select('id, display_name, avatar_url, created_at').eq('id', user.id).single();
     if (data) { setProfile(data); setDisplayName(data.display_name); }
     setLoading(false);
   }
@@ -141,7 +145,7 @@ export default function ProfileScreen() {
           <Card>
             <Label>Email</Label>
             <View style={styles.fieldRow}>
-              <Text style={styles.fieldValue}>{profile?.email ?? '—'}</Text>
+              <Text style={styles.fieldValue}>{email ?? '—'}</Text>
             </View>
           </Card>
 

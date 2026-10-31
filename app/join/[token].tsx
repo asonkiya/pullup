@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { setPendingRoute } from '@/lib/pendingRoute';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
+import { askForPushAfter } from '@/lib/push';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
 import { HButton } from '@/components/ui';
 
@@ -43,6 +44,7 @@ export default function JoinScreen() {
       });
     }
     router.replace(`/plan/${planId}`);
+    askForPushAfter('joined');
   }
 
   if (status === 'loading') {
