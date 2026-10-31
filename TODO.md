@@ -19,8 +19,8 @@ Done on the branch:
 - [x] Profile reads email/phone from the auth user.
 
 Before building 8:
-- [ ] Enable the Apple provider in Supabase Auth with client ID
-      `com.ahrimane.pullup` (native sign-in needs no secret).
+- [x] Apple provider enabled in Supabase Auth (client ID
+      `com.ahrimane.pullup`, 2026-10-31).
 - [ ] Buy the domain, then universal links (below).
 - [ ] Update `docs/review-notes.md`: location section (background while
       sharing, no "Always"), Sign in with Apple.
