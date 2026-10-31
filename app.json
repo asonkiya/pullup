@@ -3,7 +3,7 @@
     "name": "Pull Up",
     "slug": "hangout",
     "owner": "ahrimane",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "pullup",
@@ -11,11 +11,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ahrimane.pullup",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Pull Up uses your location to find nearby venues and share your ETA with friends in your plan. Sharing is per-plan, foreground only, and you control when it's on.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:heypullup.com"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -40,12 +43,15 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-apple-authentication",
       "@rnmapbox/maps",
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Pull Up to share your ETA with your group for this plan only.",
-          "isIosBackgroundLocationEnabled": false,
+          "locationWhenInUsePermission": "Pull Up uses your location to find spots near you and, when you tap Share ETA, to show your crew how far away you are. Sharing keeps going if you switch to Maps and stops when you stop it or the plan ends.",
+          "locationAlwaysAndWhenInUsePermission": "Pull Up only uses location in the background while you're sharing your ETA for a plan. It stops when you stop sharing or the plan ends.",
+          "locationAlwaysPermission": "Pull Up only uses location in the background while you're sharing your ETA for a plan. It stops when you stop sharing or the plan ends.",
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": false
         }
       ],

@@ -250,8 +250,12 @@ export default function EtaDashboardScreen() {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
-        'Location required',
-        'Pull Up needs location access while you use the app to share your ETA. This is only active while the app is open.'
+        'Location is off',
+        'Turn on location for Pull Up to share your ETA. It is only used for this plan, and sharing stops when you stop it or the plan ends.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
       );
       return;
     }

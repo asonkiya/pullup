@@ -17,6 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
+import { askForPushAfter } from '@/lib/push';
 import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 import { NavHead, VibeChip } from '@/components/ui';
 import { PlacePicker, type PickedPlace } from '@/components/PlacePicker';
@@ -157,6 +158,7 @@ export default function CreatePlanScreen() {
 
     setLoading(false);
     router.replace(`/plan/${plan.id}/invite`);
+    askForPushAfter('created');
   }
 
   function whenLabel(): string {

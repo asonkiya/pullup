@@ -1,35 +1,50 @@
 # TODO
 
-## Resubmission (build 6 rejected, Oct 2026)
-- [ ] Record the rejection reason and guideline here, and fix it first.
-- [ ] No OTA needed: the next binary includes everything on `main`
-      (security fix, join_plan flow, friction basics, ETA-only).
-- [ ] Re-test the demo account against the new RLS and join flow (the demo
-      world must stay at 4 documented plans), then update `docs/review-notes.md`.
-- [ ] Decide which build-7 native items ship in this binary (see below and
-      `docs/friction-audit.md`). Note: background location ("Always") adds
-      review scrutiny, so it needs a clear review note and a permission primer.
+## In review: 1.0 (build 7)
+- Resubmitted 2026-10-30. Builds 5 and 6 were rejected for a crash on launch
+  (2.1(a)); the cause was missing EAS env vars, fixed from build 6 on.
+- Do not publish OTAs to the `production` channel until it's approved: the
+  reviewer's build picks them up.
 
-## Build 7 (needs a new native build)
-- [ ] **Universal links for invites.** Replace `pullup://join/<token>` shares with
-      an https link that opens the app directly and shows a download landing page
-      for non-users (every invite becomes an acquisition funnel).
-      1. Decide domain: ~$10/yr custom domain (`pullupapp.com/join/…`) vs free
-         GitHub Pages (`asonkiya.github.io/pullup/join/…`).
-      2. Serve `/.well-known/apple-app-site-association` for bundle
-         `com.ahrimane.pullup`, route `/join/*`.
-      3. `associatedDomains: ["applinks:<domain>"]` in app.json (native change —
-         this is why it needs build 7).
-      4. Landing page: "X invited you to Pull Up" + App Store link.
-      5. Share the https URL; keep `pullup://` as fallback.
-- [ ] Send `X-Ios-Bundle-Identifier` header on client Google Places calls, then
-      add the iOS-app restriction to the Maps API key in Google Cloud (key is
-      already API-restricted to Places New + Routes with daily quota caps).
+## Build 8 (1.1.0, branch `feat/build-8`)
+Done on the branch:
+- [x] Version 1.1.0, so build 8 gets its own runtime and OTAs for it can't
+      reach build 7.
+- [x] ETA sharing keeps running in the background (switch to Maps, lock the
+      phone). Uses a location task started by the user's tap, so "While
+      Using" permission is enough; iOS shows the blue location pill.
+- [x] Push permission asked after creating or joining a plan, with an
+      explanation first, instead of at first sign-in.
+- [x] Sign in with Apple.
+- [x] Profile reads email/phone from the auth user.
+
+Before building 8:
+- [x] Apple provider enabled in Supabase Auth (client ID
+      `com.ahrimane.pullup`, 2026-10-31).
+- [ ] heypullup.com live (DNS + Pages cutover, see `docs/website.md`, PR #15).
+      Build 8 shares https://heypullup.com/join/<token> links, so the site
+      and its AASA file must be up before build 8 ships.
+- [x] `docs/review-notes.md` and `docs/privacy-policy.md` updated for build 8
+      (they go live on merge). When submitting build 8, paste the new notes
+      into App Store Connect; the App Privacy answers don't change.
+
+After build 8 is live:
+- [ ] Move `supabase/deferred/hide_user_contact_columns.sql` into
+      `supabase/migrations/` and push it (hides co-members' email, phone and
+      push token; breaks build 7's original bundle, so not before).
+
+### Universal links (done in code)
+- [x] `associatedDomains: applinks:heypullup.com`; invites share
+      `https://heypullup.com/join/<token>`; `pullup://` still works.
+- [x] AASA for `/join/*` and the no-app invite page are in `site/` (PR #15).
+- [x] "Join with a code" accepted only 6–12 characters, but tokens are 32,
+      so pasted links were rejected. Fixed (build 8 / next OTA).
+
+### Other native-build items
+- [ ] Send `X-Ios-Bundle-Identifier` on client Google Places calls, then add
+      the iOS-app restriction to the Maps API key.
 - [ ] Owners can't delete plans from the client — RLS silently no-ops (204, row
       stays). Add delete policy or an edge function; surface errors in UI.
-- [ ] Notification tap should deep-link to the relevant plan/chat (verify during
-      testing where it currently lands).
-
 
 ### UX from the 2-phone field test (2026-09-03)
 - [ ] **Anchor/area picking.** Today the search area is either an exact venue or
