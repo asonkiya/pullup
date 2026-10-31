@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["Z428Z377RQ.com.ahrimane.pullup"],
+        "components": [
+          { "/": "/join/*", "comment": "Plan invite links open the app" }
+        ]
+      }
+    ]
+  }
+}

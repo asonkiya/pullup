@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '*.md'
+      - '.github/workflows/pages.yml'
 
 jobs:
   update:
