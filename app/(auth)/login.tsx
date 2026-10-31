@@ -14,7 +14,7 @@ import {
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from '@/lib/supabase';
 import { hasPendingRoute } from '@/lib/pendingRoute';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, PRIVACY_URL } from '@/constants';
 
 export default function LoginScreen() {
   const [mode, setMode]       = useState<'signin' | 'signup'>('signin');
@@ -155,7 +155,7 @@ export default function LoginScreen() {
           {mode === 'signup' && (
             <Text style={styles.consent}>
               By creating an account you agree to our{' '}
-              <Text style={styles.consentLink} onPress={() => Linking.openURL('https://asonkiya.github.io/pullup/privacy-policy')}>
+              <Text style={styles.consentLink} onPress={() => Linking.openURL(PRIVACY_URL)}>
                 privacy policy
               </Text>.
             </Text>

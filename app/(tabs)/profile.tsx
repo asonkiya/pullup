@@ -12,7 +12,7 @@ import {
   Linking,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, PRIVACY_URL } from '@/constants';
 import { Avatar, HButton, Label, Card } from '@/components/ui';
 import type { UserRow } from '@/types/database';
 
@@ -95,7 +95,7 @@ export default function ProfileScreen() {
   }
 
   function openPrivacy() {
-    Linking.openURL('https://asonkiya.github.io/pullup/privacy-policy');
+    Linking.openURL(PRIVACY_URL);
   }
 
   return (

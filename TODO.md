@@ -21,7 +21,9 @@ Done on the branch:
 Before building 8:
 - [x] Apple provider enabled in Supabase Auth (client ID
       `com.ahrimane.pullup`, 2026-10-31).
-- [ ] Buy the domain, then universal links (below).
+- [ ] heypullup.com live (DNS + Pages cutover, see `docs/website.md`, PR #15).
+      Build 8 shares https://heypullup.com/join/<token> links, so the site
+      and its AASA file must be up before build 8 ships.
 - [x] `docs/review-notes.md` and `docs/privacy-policy.md` updated for build 8
       (they go live on merge). When submitting build 8, paste the new notes
       into App Store Connect; the App Privacy answers don't change.
@@ -31,16 +33,12 @@ After build 8 is live:
       `supabase/migrations/` and push it (hides co-members' email, phone and
       push token; breaks build 7's original bundle, so not before).
 
-### Universal links for invites (needs the domain)
-Replace `pullup://join/<token>` shares with an https link that opens the app
-directly and shows a landing page for non-users.
-1. Buy a domain (GitHub Pages project sites can't serve the AASA file at the
-   domain root).
-2. Serve `/.well-known/apple-app-site-association` for
-   `Z428Z377RQ.com.ahrimane.pullup`, route `/join/*`.
-3. `associatedDomains: ["applinks:<domain>"]` in app.json.
-4. Landing page / guest web page: "X invited you to Pull Up" + App Store link.
-5. Share the https URL; keep `pullup://` as a fallback.
+### Universal links (done in code)
+- [x] `associatedDomains: applinks:heypullup.com`; invites share
+      `https://heypullup.com/join/<token>`; `pullup://` still works.
+- [x] AASA for `/join/*` and the no-app invite page are in `site/` (PR #15).
+- [x] "Join with a code" accepted only 6–12 characters, but tokens are 32,
+      so pasted links were rejected. Fixed (build 8 / next OTA).
 
 ### Other native-build items
 - [ ] Send `X-Ios-Bundle-Identifier` on client Google Places calls, then add

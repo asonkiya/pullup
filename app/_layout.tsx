@@ -136,11 +136,11 @@ export default function RootLayout() {
     return () => sub.remove();
   }, [session?.user.id]);
 
-  // Handle deep links (pullup://join/:token)
+  // Handle invite links (https://heypullup.com/join/:token and pullup://join/:token)
   useEffect(() => {
     function handleUrl(url: string) {
       const parsed = Linking.parse(url);
-      // parsed.path is "join/TOKEN" for pullup://join/TOKEN
+      // parsed.path is "join/TOKEN" for both link forms
       if (parsed.path?.startsWith('join/')) {
         const token = parsed.path.split('/')[1];
         if (!token) return;
