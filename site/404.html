@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- GitHub Pages serves this file for every unknown path, which is how
+       /join/<token> works without a server. With the app installed, iOS opens
+       those links straight in the app (universal links), so this page is what
+       people without the app see. -->
+  <title>You're invited · Pull Up</title>
+  <meta name="description" content="You've been invited to a plan on Pull Up. Tap to join.">
+  <meta name="apple-itunes-app" content="app-id=6790259365">
+  <meta property="og:title" content="You're invited to a plan on Pull Up">
+  <meta property="og:description" content="Tap to join, vote on the spot and see who's on the way.">
+  <meta property="og:image" content="https://heypullup.com/img/icon-512.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/img/favicon.png">
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/"><img src="/img/apple-touch-icon.png" alt=""><span>pull up</span></a>
+    </div>
+  </header>
+
+  <main class="invite">
+    <div class="wrap">
+      <div class="card" id="join" hidden>
+        <img class="app-icon" src="/img/icon-512.png" alt="Pull Up">
+        <h1>You're invited to a plan</h1>
+        <p>Join to vote on the spot and see who's on the way.</p>
+        <a class="btn btn-primary" id="open-app" href="#">Open in Pull Up</a>
+        <a class="btn btn-ghost" href="https://apps.apple.com/app/id6790259365">Get the app (free)</a>
+        <p class="fine">New to Pull Up? Get the app, then come back here and tap <strong>Open in Pull Up</strong>. You'll land right in the plan.</p>
+      </div>
+
+      <div class="card" id="not-found" hidden>
+        <h1>Nothing here</h1>
+        <p>This page doesn't exist. If someone sent you an invite, check that you have the whole link.</p>
+        <a class="btn btn-primary" href="/">Go to Pull Up</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>© 2026 Pull Up</span>
+      <nav>
+        <a href="/support">Support</a>
+        <a href="/privacy-policy">Privacy policy</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var m = location.pathname.match(/^\/join\/([A-Za-z0-9_-]{8,64})\/?$/);
+      if (m) {
+        document.getElementById('open-app').href = 'pullup://join/' + m[1];
+        document.getElementById('join').hidden = false;
+      } else {
+        document.title = 'Not found · Pull Up';
+        document.getElementById('not-found').hidden = false;
+      }
+    })();
+  </script>
+</body>
+</html>
