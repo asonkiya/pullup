@@ -54,9 +54,6 @@ no push notifications.
 Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (both public).
 
 ## Later
-- The app still runs auto-select client-side in `venues.tsx`/`faceoff.tsx`,
-  where a non-host's winning vote can't update `plans`. Switch it to
-  `cast_vote` (JS only, OTA-able).
 - Guest → full account: when a web guest installs the app, link the anonymous
   user (`updateUser` with email / `linkIdentity`) so they keep their plans.
 - Turn on CAPTCHA for anonymous sign-ins if spam shows up (Supabase rate-limits
