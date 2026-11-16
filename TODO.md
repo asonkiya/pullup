@@ -21,9 +21,11 @@ Done on the branch:
 Before building 8:
 - [x] Apple provider enabled in Supabase Auth (client ID
       `com.ahrimane.pullup`, 2026-10-31).
-- [ ] heypullup.com live (DNS + Pages cutover, see `docs/website.md`, PR #15).
-      Build 8 shares https://heypullup.com/join/<token> links, so the site
-      and its AASA file must be up before build 8 ships.
+- [x] heypullup.com live on Vercel (2026-11-16, see `docs/website.md`): site,
+      invite page and AASA file are up, so build 8's https invite links work.
+- [ ] After build 7 is approved: App Store Connect privacy/support/marketing
+      URLs → heypullup.com. Once no live build uses asonkiya.github.io/pullup,
+      turn off GitHub Pages and delete the `docs/` copies (see website.md).
 - [x] `docs/review-notes.md` and `docs/privacy-policy.md` updated for build 8
       (they go live on merge). When submitting build 8, paste the new notes
       into App Store Connect; the App Privacy answers don't change.
