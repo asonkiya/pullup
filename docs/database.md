@@ -60,6 +60,7 @@ A plan with its lifecycle state and venue selection.
 | `vibe` | text | Nullable — maps to venue types (Food, Drinks, Coffee, etc.) |
 | `arrival_time` | timestamptz | Nullable — "be there by" time set in LOCKED state |
 | `voting_enabled` | boolean | Default `true`. When false, only the host picks the venue |
+| `host_pick_candidate_id` | uuid FK | Nullable. The first spot the host liked: the default if the crew doesn't choose another. References `venue_candidates(id)` ON DELETE SET NULL |
 | `automation` | boolean | Default `true`. When false, the plan is never auto-started, auto-ended or reminded (App Review demo plans) |
 | `created_at` | timestamptz | Default `now()` |
 
@@ -108,7 +109,7 @@ with no policies.
 | `id` | bigint PK | Identity |
 | `plan_id` | uuid FK | ON DELETE CASCADE |
 | `user_id` | uuid FK | Recipient, ON DELETE CASCADE |
-| `kind` | text | `tomorrow`, `vote`, `host_pick`, `starting`, `leave`, `ended` |
+| `kind` | text | `tomorrow`, `vote`, `locked`, `host_pick`, `starting`, `leave`, `ended` |
 | `plan_time` | timestamptz | The plan time the push was for |
 | `title` / `body` | text | Push text |
 | `route` | text | Where a tap lands, nullable |

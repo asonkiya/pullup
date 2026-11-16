@@ -232,6 +232,7 @@ plans), are left alone.
 |---|---|---|---|
 | `tomorrow` | Members | 24h before (plans made more than 30h ahead) | "Tomorrow at <place>" |
 | `vote` | Members who haven't swiped | max(24h before, 2h after creation) | "<host> is waiting on your vote", opens the deck |
+| `locked` | Members | The decide time (below) | Open plan → `venue_locked`, "It's settled: <place>" |
 | `host_pick` | Host | max(3h before, 1h after creation), still no spot | "2 people haven't voted yet", opens the deck |
 | `starting` | Members | 1h before | `venue_locked` → `active`, "Starts in about an hour" |
 | `leave` | Members who haven't left | Travel time + 10 min before (15 to 50 min) | "Time to head out" |
@@ -241,6 +242,27 @@ Members who RSVP'd "can't make it" get none of these. Copy never states a
 clock time, because the server doesn't know anyone's timezone. One push per
 person, kind and plan time; moving the plan re-arms its reminders. A push that
 sits unsent for 30 minutes is dropped.
+
+### How a plan decides
+
+Migration `20261118000000_host_pick_default.sql`. The crew is everyone who
+hasn't said "can't make it".
+
+- **Host's pick.** The first spot the host likes becomes
+  `plans.host_pick_candidate_id`, the default.
+- **Early lock** (`cast_vote`): once at least half the crew has voted, a spot
+  with 2+ likes from 60% of the people who voted locks. Two spots level on that
+  count is a tie for the host's face-off.
+- **Decide time** (`decide_due_plans`, run by the same cron job): 3 hours
+  before the plan, or an hour after it was made if that's later, but no later
+  than 30 minutes before. Most likes wins; ties go to the host's pick, then the
+  better rated. With no votes the host's pick wins. A plan with no likes and no
+  pick stays open and the host gets the `host_pick` nudge.
+- Never auto-decided: host mode, plans with no time, `automation = false`, and
+  plans that were already locked once (a host who re-opens voting is in charge).
+
+`vote_status(plan_id)` gives the app and web page the tie, the host's pick and
+the decide time.
 
 To add a reminder: add an `insert into plan_pushes` block to
 `run_plan_automation()` with a new `kind`, a time window, and

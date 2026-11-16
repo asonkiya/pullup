@@ -18,12 +18,24 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, directionsUrl } from '@/lib/affiliate';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
 
 type MemberWithUser = PlanMemberRow & { users: UserRow };
+
+// "Sam's pick: Tacos. Settles Fri, 4:30 PM unless the crew picks something else."
+function voteSummary(info: { pickName: string | null; decideAt: string | null }, isHost: boolean, hostName?: string | null): string {
+  const settled = info.decideAt
+    ? new Date(info.decideAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    : null;
+  if (!info.pickName) return `Most likes wins. Settles ${settled}.`;
+  const whose = isHost ? 'Your pick' : `${hostName ?? 'The host'}'s pick`;
+  return settled
+    ? `${whose}: ${info.pickName}. Settles ${settled} unless the crew picks something else.`
+    : `${whose}: ${info.pickName}, unless the crew picks something else.`;
+}
 
 export default function PlanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,6 +44,7 @@ export default function PlanDetailScreen() {
   const [venueDetails, setVenueDetails] = useState<VenueCandidateRow | null>(null);
   const [swipeProgress, setSwipeProgress] = useState({ swiped: 0, total: 0 });
   const [tieCount, setTieCount] = useState(0);
+  const [voteInfo, setVoteInfo] = useState<{ pickName: string | null; decideAt: string | null }>({ pickName: null, decideAt: null });
   const [lastMessage, setLastMessage] = useState<{ body: string; name: string } | null>(null);
   const [memberLocations, setMemberLocations] = useState<LiveMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,25 +122,20 @@ export default function PlanDetailScreen() {
       .eq('user_id', uid!);
     setSwipeProgress({ swiped: swiped ?? 0, total: total ?? 0 });
 
-    // Tie detection: ≥2 candidates at the auto-select threshold with equal
-    // top vote counts means the host needs to break it in the face-off.
-    if (planRes.data?.state === 'open' && membersRes.data?.length) {
-      const { data: allRight } = await supabase
-        .from('venue_swipes')
-        .select('venue_candidate_id')
-        .eq('plan_id', id!)
-        .eq('direction', 'right');
-      const counts = new Map<string, number>();
-      for (const s of allRight ?? []) {
-        counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
+    // Where the vote stands: a tie for the host to break, the host's pick (the
+    // default if the crew doesn't choose) and when the plan settles itself.
+    if (planRes.data?.state === 'open') {
+      const { data: vs } = await supabase.rpc('vote_status', { p_plan_id: id! }).maybeSingle();
+      setTieCount(vs?.tie ? vs.leader_ids.length : 0);
+      let pickName: string | null = null;
+      if (vs?.host_pick_candidate_id) {
+        const { data: pick } = await supabase.from('venue_candidates').select('name').eq('id', vs.host_pick_candidate_id).maybeSingle();
+        pickName = pick?.name ?? null;
       }
-      const totalMembers = membersRes.data.length;
-      const over = [...counts.values()].filter((c) => c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD);
-      const maxC = over.length ? Math.max(...over) : 0;
-      const leaders = over.filter((c) => c === maxC);
-      setTieCount(leaders.length > 1 ? leaders.length : 0);
+      setVoteInfo({ pickName, decideAt: vs?.decide_at ?? null });
     } else {
       setTieCount(0);
+      setVoteInfo({ pickName: null, decideAt: null });
     }
 
     // Last chat message
@@ -461,6 +469,9 @@ export default function PlanDetailScreen() {
               </>
             ) : (
               <Text style={styles.votingSub}>Browse venues and vote with your crew</Text>
+            )}
+            {plan.voting_enabled && (voteInfo.pickName || voteInfo.decideAt) && (
+              <Text style={styles.votingSub}>{voteSummary(voteInfo, isHost, members.find((m) => m.role === 'host')?.users?.display_name)}</Text>
             )}
             {(plan.voting_enabled || isHost) && (
               <HButton

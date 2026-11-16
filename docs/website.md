@@ -43,9 +43,16 @@ People without the app join from the browser with just a name:
 2. "Join as a guest" → name → Supabase **anonymous sign-in**
    (`display_name` in user metadata; `handle_new_user` creates the profile) →
    `join_plan(token)`.
-3. The plan view: RSVP, vote on the spot with `cast_vote` (which also
-   auto-locks it), the locked spot with Open in Maps, who's coming, and a nudge
-   to get the app for ETA sharing on the day.
+3. The plan view: RSVP, the spot, who's coming, and a nudge to get the app for
+   ETA sharing on the day.
+
+A guest never has to vote. If the host has a pick, the page leads with it:
+"Sam's pick: Tacos on Franklin. Going here unless the crew wants something
+else", one tap on **Works for me**, and the other spots behind "I'd rather go
+somewhere else". With no pick it lists the spots to like. Either way the plan
+settles itself at `vote_status().decide_at` (see "How a plan decides" in
+edge-functions.md). If the plan has an area but no spots yet, the page calls
+`search-venues` itself.
 
 The session is kept in localStorage, so reopening the link returns to the plan.
 Anonymous accounts can't create plans (`plans_insert_creator`). Web guests get

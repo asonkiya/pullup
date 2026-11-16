@@ -42,6 +42,8 @@ export type PlanRow = {
   voting_enabled: boolean;
   // False: never auto-started, auto-ended or reminded (see run_plan_automation).
   automation: boolean;
+  // The first spot the host liked: the default if the crew doesn't pick another.
+  host_pick_candidate_id: string | null;
   created_at: string;
 };
 
@@ -177,7 +179,7 @@ export type Database = {
       };
       plans: {
         Row: PlanRow;
-        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'selected_place_lat' | 'selected_place_lng' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled' | 'automation'>;
+        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'selected_place_lat' | 'selected_place_lng' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled' | 'automation' | 'host_pick_candidate_id'>;
         Update: Partial<Omit<PlanRow, 'id' | 'created_at'>>;
         Relationships: [];
       };
@@ -253,6 +255,17 @@ export type Database = {
       cast_vote: {
         Args: { p_candidate_id: string; p_direction: SwipeDirection };
         Returns: { locked: boolean; tie: boolean; place_name: string | null }[];
+      };
+      vote_status: {
+        Args: { p_plan_id: string };
+        Returns: {
+          members: number;
+          voters: number;
+          tie: boolean;
+          leader_ids: string[];
+          host_pick_candidate_id: string | null;
+          decide_at: string | null;
+        }[];
       };
     };
     Enums: {

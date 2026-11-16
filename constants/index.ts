@@ -117,8 +117,10 @@ export const SHADOWS = {
 export const LOCATION_UPDATE_INTERVAL_MS    = 90_000;
 export const LOCATION_DISTANCE_THRESHOLD_M  = 150;
 export const DEFAULT_SHARE_SESSION_HOURS    = 6;
-// The auto-select rule itself runs in the cast_vote() SQL function; keep these
-// in step with it. The app uses them to detect ties for the host's face-off.
+// The auto-select rule runs in SQL (plan_vote_standing, used by cast_vote and
+// vote_status): once half the crew has voted, a spot locks with this many likes
+// from this share of the people who voted. Kept here for reference; keep the
+// two in step.
 export const AUTO_SELECT_THRESHOLD          = 0.6;
 // A spot never auto-locks on fewer right swipes than this — otherwise a host
 // swiping before anyone joins (1/1 = 100%) locks the plan alone.

@@ -63,10 +63,22 @@ const MAPBOX_VIBE_CATEGORIES: Record<string, string[]> = {
 };
 const MAPBOX_FALLBACK_CATEGORIES = ['restaurant', 'bar', 'cafe'];
 
+// The app calls this natively; the guest web page (heypullup.com/join) calls
+// it from the browser when a plan has no spots yet, so every response carries
+// CORS headers. supabase-js also sends apikey and x-client-info.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, content-type' } });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
+  const res = await handle(req);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) res.headers.set(k, v);
+  return res;
+});
+
+async function handle(req: Request): Promise<Response> {
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return new Response('Unauthorized', { status: 401 });
@@ -197,7 +209,7 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({ inserted: data?.length ?? 0, provider, cache_hit: cacheHit }), {
     headers: { 'Content-Type': 'application/json' },
   });
-});
+}
 
 // ── Google Places Nearby + Routes + photos ──────────────────────────────────────
 async function searchGoogle(
