@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   useFonts,
@@ -19,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { useLocationSharing } from '@/lib/locationSharing';
 import { consumePendingRoute, setPendingRoute } from '@/lib/pendingRoute';
 import { logEvent } from '@/lib/analytics';
+import { syncPushToken } from '@/lib/push';
 import type { Session } from '@supabase/supabase-js';
 
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '');
@@ -89,27 +89,11 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Register for push notifications
+  // Keep the push token fresh. The permission prompt itself waits until the
+  // user creates or joins a plan (lib/push.ts).
   useEffect(() => {
     if (!session) return;
-    (async () => {
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Pull Up',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-        });
-      }
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') return;
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-      if (!projectId) return;
-      const token = await Notifications.getExpoPushTokenAsync({ projectId });
-      await supabase
-        .from('users')
-        .update({ push_token: token.data })
-        .eq('id', session.user.id);
-    })();
+    syncPushToken(session.user.id);
   }, [session?.user.id]);
 
   // Notification taps. useLastNotificationResponse also covers the tap that
@@ -152,11 +136,11 @@ export default function RootLayout() {
     return () => sub.remove();
   }, [session?.user.id]);
 
-  // Handle deep links (pullup://join/:token)
+  // Handle invite links (https://heypullup.com/join/:token and pullup://join/:token)
   useEffect(() => {
     function handleUrl(url: string) {
       const parsed = Linking.parse(url);
-      // parsed.path is "join/TOKEN" for pullup://join/TOKEN
+      // parsed.path is "join/TOKEN" for both link forms
       if (parsed.path?.startsWith('join/')) {
         const token = parsed.path.split('/')[1];
         if (!token) return;

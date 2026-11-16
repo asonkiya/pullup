@@ -18,7 +18,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, directionsUrl } from '@/lib/affiliate';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES, inviteUrl } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
@@ -199,7 +199,7 @@ export default function PlanDetailScreen() {
       .select().single();
     if (!invite) return;
     logEvent('invite_shared', { planId: id!, properties: { method: 'share', invite_id: invite.id, from: 'crew_row' } });
-    Share.share({ message: `Pull up with us: ${plan.title}\npullup://join/${invite.token}` });
+    Share.share({ message: `Pull up with us: ${plan.title}\n${inviteUrl(invite.token)}` });
   }
 
   function notifyMembers(event: string, extra?: Record<string, string>) {

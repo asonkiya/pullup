@@ -11,20 +11,53 @@ import {
   SafeAreaView,
   Linking,
 } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from '@/lib/supabase';
 import { hasPendingRoute } from '@/lib/pendingRoute';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, PRIVACY_URL } from '@/constants';
 
 export default function LoginScreen() {
   const [mode, setMode]       = useState<'signin' | 'signup'>('signin');
   const [email, setEmail]     = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
 
   // Arriving from an invite link almost always means a new user.
   useEffect(() => {
     hasPendingRoute().then((pending) => { if (pending) setMode('signup'); });
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
   }, []);
+
+  async function signInWithApple() {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error('No identity token from Apple');
+      setLoading(true);
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) throw error;
+      // Apple only shares the name on the very first sign-in, so save it now
+      // instead of falling back to an email-prefix display name.
+      const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean).join(' ');
+      if (name && data.user) {
+        await supabase.from('users').update({ display_name: name }).eq('id', data.user.id);
+      }
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code !== 'ERR_REQUEST_CANCELED') {
+        Alert.alert('Sign in with Apple failed', e instanceof Error ? e.message : 'Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function submit() {
     const e = email.trim().toLowerCase();
@@ -57,6 +90,21 @@ export default function LoginScreen() {
           <Text style={styles.wordmark}>pull up</Text>
           <Text style={styles.tagline}>Pick a place. Share your ETA. See who's almost there.</Text>
         </View>
+
+        {appleAvailable && (
+          <View style={styles.form}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={mode === 'signup'
+                ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={RADIUS.button}
+              style={styles.appleBtn}
+              onPress={signInWithApple}
+            />
+            <Text style={styles.divider}>or use email</Text>
+          </View>
+        )}
 
         {/* Mode tabs */}
         <View style={styles.tabs}>
@@ -107,7 +155,7 @@ export default function LoginScreen() {
           {mode === 'signup' && (
             <Text style={styles.consent}>
               By creating an account you agree to our{' '}
-              <Text style={styles.consentLink} onPress={() => Linking.openURL('https://asonkiya.github.io/pullup/privacy-policy')}>
+              <Text style={styles.consentLink} onPress={() => Linking.openURL(PRIVACY_URL)}>
                 privacy policy
               </Text>.
             </Text>
@@ -175,6 +223,8 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: '#fff', fontSize: FONT_SIZE.md, fontFamily: FONTS.semibold, includeFontPadding: false },
+  appleBtn: { height: 52, width: '100%' },
+  divider: { fontSize: FONT_SIZE.xs, fontFamily: FONTS.medium, color: COLORS.textFaint, textAlign: 'center', marginTop: SPACING.xs, includeFontPadding: false },
   consent: { fontSize: FONT_SIZE.xs, fontFamily: FONTS.regular, color: COLORS.textSecondary, textAlign: 'center', marginTop: SPACING.sm, includeFontPadding: false, lineHeight: 16 },
   consentLink: { color: COLORS.primary, fontFamily: FONTS.semibold },
 });

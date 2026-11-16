@@ -35,12 +35,13 @@ export default function HomeScreen() {
   const [joinInput, setJoinInput] = useState('');
   const router = useRouter();
 
-  // Accepts a full pullup://join/TOKEN link, an exp:// dev link, or a raw code.
+  // Accepts a full https://heypullup.com/join/TOKEN or pullup://join/TOKEN
+  // link, an exp:// dev link, or a raw code.
   function submitJoinCode() {
     const raw = joinInput.trim();
-    const match = raw.match(/join\/([A-Za-z0-9]+)/);
+    const match = raw.match(/join\/([A-Za-z0-9_-]+)/);
     const token = (match ? match[1] : raw).trim();
-    if (!/^[a-z0-9]{6,12}$/i.test(token)) {
+    if (!/^[a-z0-9_-]{6,64}$/i.test(token)) {
       Alert.alert("That doesn't look right", 'Paste the invite link or just the code at the end of it.');
       return;
     }

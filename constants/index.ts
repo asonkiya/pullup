@@ -114,6 +114,13 @@ export const SHADOWS = {
 } as const;
 
 // ─── Non-UI constants (unchanged) ─────────────────────────────────────────────
+export const SITE_URL       = 'https://heypullup.com';
+export const PRIVACY_URL    = `${SITE_URL}/privacy-policy`;
+/** Invite links are https so they're tappable everywhere; with the app
+ *  installed iOS opens them in the app (universal links), otherwise they land
+ *  on the site's invite page. */
+export const inviteUrl = (token: string) => `${SITE_URL}/join/${token}`;
+
 export const LOCATION_UPDATE_INTERVAL_MS    = 90_000;
 export const LOCATION_DISTANCE_THRESHOLD_M  = 150;
 export const DEFAULT_SHARE_SESSION_HOURS    = 6;

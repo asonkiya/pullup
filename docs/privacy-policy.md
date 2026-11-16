@@ -6,7 +6,7 @@ permalink: /privacy-policy
 
 # Privacy Policy
 
-**Last updated: 2026-06-21**
+**Last updated: 2026-10-31**
 
 This Privacy Policy describes how Pull Up ("we", "us", "the app") collects, uses, and shares information about you when you use the Pull Up mobile app.
 
@@ -18,9 +18,9 @@ If you have questions about this policy, contact: **kamehamehaa0@gmail.com**.
 
 | Type | Examples | Why |
 |---|---|---|
-| Account information | Email address, display name | Authentication, identifying you to plan members |
+| Account information | Email address (or Apple private relay address if you use Sign in with Apple), display name | Authentication; your display name identifies you to plan members (your email is not shown to them) |
 | Push notification token | Anonymous device identifier issued by Apple/Google via Expo | Sending you notifications about your plans |
-| Location data | GPS coordinates while you're actively sharing your ETA for a plan | Showing your position on the group's live map; computing ETAs to the meetup spot |
+| Location data | Your current position when you search for nearby venues; GPS coordinates while you're actively sharing your ETA for a plan | Finding venues near you; showing your position on the group's live map; computing ETAs to the meetup spot |
 | Plan content | Plan titles, vibes, scheduled times, venue selections, chat messages | Core app functionality |
 | Venue activity | Which venues you swipe right/left on; which you suggest | Group voting and venue recommendation |
 
@@ -36,9 +36,10 @@ We do **not** collect: contacts, photos, microphone access, advertising identifi
 
 Location sharing is **opt-in per plan** and works as follows:
 
-- You must explicitly tap "Share ETA for this plan" and grant foreground location permission for each plan
-- Sharing is **foreground only** — when you close or background the app, no new location data is uploaded
-- Sessions auto-expire after **4 hours**
+- You must explicitly tap "Share ETA for this plan" for each plan. The app asks only for "While Using" location permission, never "Always"
+- Once you start sharing, it keeps working if you switch to a maps app or lock your phone, so your ETA stays current. iOS shows the blue location indicator while this happens. When you aren't sharing, the app does not use your location in the background
+- Sharing stops when you tap Stop, when the plan ends or is cancelled, or automatically after **6 hours**
+- You can choose **ETA only**, so friends see how many minutes away you are without your position on a map
 - You can stop sharing at any time from the ETA screen
 - Your location is only visible to other members of the same plan, and only while your session is active
 - We never share your location outside the app or with third parties
@@ -49,6 +50,8 @@ Location sharing is **opt-in per plan** and works as follows:
 |---|---|---|
 | **Supabase** (database, auth, edge functions) | Stores all app data; processes authentication | [supabase.com/privacy](https://supabase.com/privacy) |
 | **Google Maps Platform** (Places, Routes APIs) | Returns nearby venue suggestions; computes driving/walking ETAs from your location to venues | [policies.google.com/privacy](https://policies.google.com/privacy) |
+| **Mapbox** (maps, venue search) | Displays maps; returns venue suggestions near a location | [mapbox.com/legal/privacy](https://www.mapbox.com/legal/privacy) |
+| **Sign in with Apple** (optional) | Authenticates you if you choose it; shares your name and email or a private relay address | [apple.com/legal/privacy](https://www.apple.com/legal/privacy/) |
 | **Expo Push Notifications** | Delivers push notifications to your device | [expo.dev/privacy](https://expo.dev/privacy) |
 | **Apple Push Notification Service / Google Firebase Cloud Messaging** | Underlying delivery of notifications | Apple / Google policies above |
 
