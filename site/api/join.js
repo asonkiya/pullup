@@ -12,7 +12,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
-const template = fs.readFileSync(path.join(process.cwd(), 'join.html'), 'utf8');
+// On Vercel the function runs from the repo root, not site/, so resolve the
+// page relative to this file.
+const template = fs.readFileSync(path.join(__dirname, '..', 'join.html'), 'utf8');
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
