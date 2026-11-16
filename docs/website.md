@@ -9,7 +9,7 @@ every PR gets a preview URL. No build step; `site/vercel.json` holds the routing
 | `/` | Landing page |
 | `/privacy-policy` | Privacy policy |
 | `/support` | Support + FAQ (App Store Connect support URL) |
-| `/join/<token>` | Invite page for people without the app (rewritten to `404.html`, served as 200) |
+| `/join/<token>` | Invite page for people without the app (rewritten to `join.html`) |
 | `/.well-known/apple-app-site-association` | Universal links: `/join/*` opens the app |
 
 With the app installed, iOS opens `https://heypullup.com/join/<token>` straight
