@@ -74,15 +74,22 @@ function buildMessage(payload: NotifyPayload): { title: string; body: string } {
   }
 }
 
+// The app calls this natively; the guest web page (heypullup.com/join) calls
+// it from the browser, so every response carries CORS headers. supabase-js
+// also sends apikey and x-client-info.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'authorization, content-type',
-      },
-    });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
+  const res = await handle(req);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) res.headers.set(k, v);
+  return res;
+});
+
+async function handle(req: Request): Promise<Response> {
 
   // Authenticate caller
   const authHeader = req.headers.get('Authorization');
@@ -236,4 +243,4 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({ sent: messages.length, ok: okCount, errors: messages.length - okCount }), {
     headers: { 'Content-Type': 'application/json' },
   });
-});
+}

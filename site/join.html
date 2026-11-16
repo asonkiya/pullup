@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- vercel.json rewrites /join/<token> here. With the app installed, iOS
-       opens those links straight in the app (universal links), so this page is
-       what people without the app see. -->
+  <!-- Served by api/join.js for /join/<token>, which fills in the plan's
+       details. With the app installed, iOS opens those links straight in the
+       app (universal links), so this page is what people without it see:
+       they can join as a guest with just a name, RSVP and vote on the spot. -->
   <title>You're invited · Pull Up</title>
   <meta name="description" content="You've been invited to a plan on Pull Up. Tap to join.">
   <meta name="apple-itunes-app" content="app-id=6790259365">
@@ -30,20 +31,72 @@
 
   <main class="invite">
     <div class="wrap">
-      <div class="card" id="join" hidden>
-        <img class="app-icon" src="/img/icon-512.png" alt="Pull Up">
-        <h1>You're invited to a plan</h1>
-        <p>Join to vote on the spot and see who's on the way.</p>
-        <a class="btn btn-primary" id="open-app" href="#">Open in Pull Up</a>
-        <a class="btn btn-ghost" href="https://apps.apple.com/app/id6790259365">Get the app (free)</a>
-        <p class="fine">New to Pull Up? Get the app, then come back here and tap <strong>Open in Pull Up</strong>. You'll land right in the plan.</p>
-      </div>
+      <!-- 1. Invite: who, what, where, then join as guest or open the app. -->
+      <section class="card" id="view-invite" hidden>
+        <img class="app-icon" src="/img/icon-512.png" alt="">
+        <p class="eyebrow" id="inv-host"></p>
+        <h1 id="inv-title">You're invited to a plan</h1>
+        <ul class="facts" id="inv-facts"></ul>
+        <button class="btn btn-primary" id="btn-guest" type="button">Join as a guest</button>
+        <a class="btn btn-ghost" id="btn-open-app" href="#">I have the app</a>
+        <p class="fine">No download needed. Just add your name.</p>
+      </section>
 
-      <div class="card" id="not-found" hidden>
-        <h1>Nothing here</h1>
-        <p>This page doesn't exist. If someone sent you an invite, check that you have the whole link.</p>
+      <!-- 2. Name. -->
+      <section class="card" id="view-name" hidden>
+        <h1>What should we call you?</h1>
+        <p>Your crew sees this name in the plan.</p>
+        <form id="name-form">
+          <input class="field" id="name-input" name="name" type="text" autocomplete="given-name"
+                 maxlength="40" placeholder="Your name" required>
+          <button class="btn btn-primary" id="btn-join" type="submit">Join plan</button>
+        </form>
+        <p class="error" id="name-error" hidden></p>
+        <p class="fine">By joining you agree to our <a href="/privacy-policy">privacy policy</a>.</p>
+      </section>
+
+      <!-- 3. Joined: the plan. -->
+      <section class="plan" id="view-plan" hidden>
+        <div class="card plan-head">
+          <p class="eyebrow" id="plan-when"></p>
+          <h1 id="plan-title"></h1>
+          <p class="plan-sub" id="plan-sub"></p>
+          <div class="rsvp" id="rsvp" role="group" aria-label="Are you going?">
+            <button type="button" data-rsvp="going">Going</button>
+            <button type="button" data-rsvp="maybe">Maybe</button>
+            <button type="button" data-rsvp="not_going">Can't make it</button>
+          </div>
+        </div>
+
+        <div class="card" id="spot"></div>
+
+        <div class="card">
+          <h2>Who's coming</h2>
+          <ul class="people" id="people"></ul>
+        </div>
+
+        <div class="card upsell">
+          <h2>Get the app for the day of</h2>
+          <p>Share your ETA, see who's on the way and get a heads-up when the spot is set.</p>
+          <a class="btn btn-dark" href="https://apps.apple.com/app/id6790259365">Get Pull Up (free)</a>
+          <a class="btn btn-ghost" id="btn-open-app-2" href="#">I have the app</a>
+        </div>
+      </section>
+
+      <!-- 4. Dead link. -->
+      <section class="card" id="view-gone" hidden>
+        <h1>This invite has expired</h1>
+        <p>Ask whoever sent it for a fresh link.</p>
         <a class="btn btn-primary" href="/">Go to Pull Up</a>
-      </div>
+      </section>
+
+      <!-- Couldn't reach the server, or something else went wrong. -->
+      <section class="card" id="view-error" hidden>
+        <h1>Something went wrong</h1>
+        <p id="error-msg">Check your connection and try again.</p>
+        <button class="btn btn-primary" type="button" onclick="location.reload()">Try again</button>
+        <a class="btn btn-ghost" id="btn-open-app-3" href="#">Open in Pull Up</a>
+      </section>
     </div>
   </main>
 
@@ -57,17 +110,8 @@
     </div>
   </footer>
 
-  <script>
-    (function () {
-      var m = location.pathname.match(/^\/join\/([A-Za-z0-9_-]{8,64})\/?$/);
-      if (m) {
-        document.getElementById('open-app').href = 'pullup://join/' + m[1];
-        document.getElementById('join').hidden = false;
-      } else {
-        document.title = 'Not found · Pull Up';
-        document.getElementById('not-found').hidden = false;
-      }
-    })();
-  </script>
+  <script id="boot"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
+  <script src="/join.js"></script>
 </body>
 </html>
