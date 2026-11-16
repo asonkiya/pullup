@@ -1,64 +1,43 @@
 # Website (heypullup.com)
 
-Static site in `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`
-on every push to `main` that touches `site/`.
+Static site in `site/`, hosted on Vercel. The Vercel project is linked to this
+repo with Root Directory `site`, so every push to `main` deploys production and
+every PR gets a preview URL. No build step; `site/vercel.json` holds the routing.
 
 | Path | What |
 |---|---|
 | `/` | Landing page |
-| `/privacy-policy` | Privacy policy (the source of truth; `docs/privacy-policy.md` is retired at cutover) |
+| `/privacy-policy` | Privacy policy |
 | `/support` | Support + FAQ (App Store Connect support URL) |
-| `/join/<token>` | Invite page for people without the app (served by `404.html`) |
+| `/join/<token>` | Invite page for people without the app (rewritten to `join.html`) |
 | `/.well-known/apple-app-site-association` | Universal links: `/join/*` opens the app |
 
 With the app installed, iOS opens `https://heypullup.com/join/<token>` straight
 in the app; the page is only seen without it.
 
-## Cutover
+## DNS (Squarespace → Domains → heypullup.com → DNS)
 
-1. **DNS at Squarespace** (Domains → heypullup.com → DNS). Delete the default
-   Squarespace records, then add:
+| Host | Type | Data |
+|---|---|---|
+| @ | A | 76.76.21.21 |
+| www | CNAME | cname.vercel-dns.com |
 
-   | Host | Type | Data |
-   |---|---|---|
-   | @ | A | 185.199.108.153 |
-   | @ | A | 185.199.109.153 |
-   | @ | A | 185.199.110.153 |
-   | @ | A | 185.199.111.153 |
-   | @ | AAAA | 2606:50c0:8000::153 |
-   | @ | AAAA | 2606:50c0:8001::153 |
-   | @ | AAAA | 2606:50c0:8002::153 |
-   | @ | AAAA | 2606:50c0:8003::153 |
-   | www | CNAME | asonkiya.github.io |
+`www` redirects to the apex (set on the Vercel domain). The Squarespace
+"Email Security" preset stays: it stops anyone sending mail as @heypullup.com.
 
-2. **Verify the domain on GitHub** (github.com/settings/pages → Add a domain).
-   It gives a `_github-pages-challenge-asonkiya` TXT record to add at
-   Squarespace. This stops anyone else's repo from claiming the domain.
-3. **Switch Pages to Actions and set the domain**, then run the workflow:
-   ```sh
-   gh api -X PUT repos/asonkiya/pullup/pages -f build_type=workflow -f cname=heypullup.com
-   gh workflow run pages.yml
-   ```
-4. Once the certificate is issued (minutes to an hour), enforce HTTPS:
-   `gh api -X PUT repos/asonkiya/pullup/pages -F https_enforced=true`.
-5. Check:
-   ```sh
-   curl -sI https://heypullup.com/privacy-policy | head -1
-   curl -s https://heypullup.com/.well-known/apple-app-site-association
-   curl -sI https://asonkiya.github.io/pullup/privacy-policy | grep -i location   # redirects to heypullup.com
-   ```
-6. **App Store Connect:** Privacy Policy URL → `https://heypullup.com/privacy-policy`,
-   Support URL → `https://heypullup.com/support`, Marketing URL →
-   `https://heypullup.com`.
-7. Delete `docs/privacy-policy.md` and `docs/_config.yml` (Pages no longer
-   builds `docs/`).
+## Old GitHub Pages URLs
 
-The old `asonkiya.github.io/pullup/...` URLs redirect to the custom domain with
-the same path, so build 7's in-app privacy link keeps working.
+`asonkiya.github.io/pullup` (legacy Pages build of `docs/`) stays up: build 7
+links to `/privacy-policy` there and its App Store Support URL is the root.
+Once every live build and App Store Connect point at heypullup.com, turn off
+Pages and delete `docs/index.md`, `docs/support.md`, `docs/privacy-policy.md`
+and `docs/_config.yml`.
 
 ## Later
 - Guest web page on `/join/<token>`: show the plan (host, time, place) and let
-  guests vote without installing (needs an `invite-preview` edge function and
-  Supabase anonymous sign-in; see friction-audit.md workstream 4).
+  guests vote without installing. On Vercel this can be a function in `site/api/`
+  that reads the invite (via an `invite-preview` edge function or the anon key)
+  and renders per-plan Open Graph tags, plus Supabase anonymous sign-in; see
+  friction-audit.md workstream 4.
 - An email at the domain (e.g. hello@heypullup.com) instead of the personal
   Gmail on the support and privacy pages.
