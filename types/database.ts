@@ -101,7 +101,7 @@ export type VenueSelectionEventRow = {
   id: string;
   plan_id: string;
   venue_candidate_id: string;
-  selected_by_user_id: string;
+  selected_by_user_id: string | null;
   selection_type: SelectionType;
   created_at: string;
 };
@@ -247,6 +247,10 @@ export type Database = {
       join_plan: {
         Args: { p_token: string };
         Returns: { plan_id: string; joined: boolean; invite_id: string; inviter_user_id: string }[];
+      };
+      cast_vote: {
+        Args: { p_candidate_id: string; p_direction: SwipeDirection };
+        Returns: { locked: boolean; tie: boolean; place_name: string | null }[];
       };
     };
     Enums: {

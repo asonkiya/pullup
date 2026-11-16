@@ -27,7 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, VENUE_PROVIDER } from '@/constants';
 import { NavHead, ProgressBar, AvatarRow, Skeleton, HButton } from '@/components/ui';
 import { MatchMoment } from '@/components/MatchMoment';
 import type { VenueCandidateRow } from '@/types/database';
@@ -200,32 +200,18 @@ export default function VenuesScreen() {
     await showDeck(fresh);
   }
 
-  async function checkAutoSelect(venue: VenueWithSuggester) {
-    const [{ count: totalMembers }, { count: rightSwipes }] = await Promise.all([
-      supabase.from('plan_members').select('*', { count: 'exact', head: true }).eq('plan_id', id!),
-      supabase.from('venue_swipes').select('*', { count: 'exact', head: true }).eq('venue_candidate_id', venue.id).eq('direction', 'right'),
-    ]);
-    if (!totalMembers || !rightSwipes) return;
-    if (rightSwipes < AUTO_SELECT_MIN_VOTES || rightSwipes / totalMembers < AUTO_SELECT_THRESHOLD) return;
+  // cast_vote records the swipe and runs the auto-select rule on the server
+  // (>= AUTO_SELECT_MIN_VOTES likes from >= AUTO_SELECT_THRESHOLD of members,
+  // no tie), so the winning vote locks the plan whoever casts it. Only the
+  // host can update plans directly.
+  async function castVote(venue: VenueWithSuggester, direction: 'right' | 'left') {
+    const { data, error } = await supabase
+      .rpc('cast_vote', { p_candidate_id: venue.id, p_direction: direction })
+      .single();
+    // voting_closed: someone else's vote locked the plan first. Nothing to do.
+    if (error || !data) return;
 
-    // This venue hit threshold — but don't lock first-past-the-post if another
-    // spot is equally loved. Compare against all candidates' right-swipes.
-    const { data: allRight } = await supabase
-      .from('venue_swipes')
-      .select('venue_candidate_id')
-      .eq('plan_id', id!)
-      .eq('direction', 'right');
-    const counts = new Map<string, number>();
-    for (const s of allRight ?? []) {
-      counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
-    }
-    const overThreshold = [...counts.entries()].filter(
-      ([, c]) => c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD
-    );
-    const maxCount = Math.max(...overThreshold.map(([, c]) => c));
-    const leaders = overThreshold.filter(([, c]) => c === maxCount).map(([vid]) => vid);
-
-    if (leaders.length > 1) {
+    if (data.tie) {
       // Genuine tie — the host breaks it in the face-off.
       if (isHost) {
         router.push(`/plan/${id}/faceoff`);
@@ -237,22 +223,12 @@ export default function VenuesScreen() {
       }
       return;
     }
+    if (!data.locked) return;
 
-    // Single clear leader; lock it (usually the venue just swiped).
-    const winner = leaders[0] === venue.id
+    // Usually the venue just swiped; otherwise an earlier favourite.
+    const winner = venue.name === data.place_name
       ? venue
-      : candidates.find((c) => c.id === leaders[0]) ?? venue;
-
-    await supabase.from('plans').update({
-      selected_place_id: winner.place_id,
-      selected_place_name: winner.name,
-      selected_place_lat: winner.lat,
-      selected_place_lng: winner.lng,
-      state: 'venue_locked' as const,
-    }).eq('id', id!);
-    await supabase.from('venue_selection_events').insert({
-      plan_id: id!, venue_candidate_id: winner.id, selected_by_user_id: uid!, selection_type: 'auto' as const,
-    });
+      : candidates.find((c) => c.name === data.place_name) ?? venue;
     supabase.functions.invoke('notify', {
       body: { event: 'venue_locked', plan_id: id, actor_user_id: uid, extra: { actor_name: myName, plan_title: planTitle, place_name: winner.name } },
     });
@@ -276,11 +252,7 @@ export default function VenuesScreen() {
       }
       return;
     }
-    supabase.from('venue_swipes').upsert({
-      plan_id: id!, user_id: uid, venue_candidate_id: venue.id, direction,
-    }).then(() => {
-      if (direction === 'right') checkAutoSelect(venue);
-    });
+    castVote(venue, direction);
     setIdx((i) => i + 1);
   }
 
