@@ -212,6 +212,42 @@ The actor is always excluded from the recipient list. `member_joined` additional
 
 ---
 
+## `send-plan-pushes`
+
+Delivers the reminder pushes that the database queues for plans that run
+themselves. No request body and no caller identity: it only sends what
+`run_plan_automation()` already queued in `plan_pushes`, and
+`claim_plan_pushes()` hands each push out once. Deploy with `--no-verify-jwt`
+(pg_cron calls it without a key).
+
+### How plans run themselves
+
+pg_cron runs `run_plan_automation()` every 5 minutes (migration
+`20261117000000_plans_run_themselves.sql`), then calls this function if the
+queue isn't empty. "Plan time" is `coalesce(arrival_time, scheduled_for)`;
+plans without a time, and plans with `automation = false` (the App Review demo
+plans), are left alone.
+
+| Kind | To | When | Effect |
+|---|---|---|---|
+| `tomorrow` | Members | 24h before (plans made more than 30h ahead) | "Tomorrow at <place>" |
+| `vote` | Members who haven't swiped | max(24h before, 2h after creation) | "<host> is waiting on your vote", opens the deck |
+| `host_pick` | Host | max(3h before, 1h after creation), still no spot | "2 people haven't voted yet", opens the deck |
+| `starting` | Members | 1h before | `venue_locked` → `active`, "Starts in about an hour" |
+| `leave` | Members who haven't left | Travel time + 10 min before (15 to 50 min) | "Time to head out" |
+| `ended` | Members | 4h after | `venue_locked`/`active` → `completed`, "Tap for the recap" |
+
+Members who RSVP'd "can't make it" get none of these. Copy never states a
+clock time, because the server doesn't know anyone's timezone. One push per
+person, kind and plan time; moving the plan re-arms its reminders. A push that
+sits unsent for 30 minutes is dropped.
+
+To add a reminder: add an `insert into plan_pushes` block to
+`run_plan_automation()` with a new `kind`, a time window, and
+`on conflict do nothing`. Tapping opens `route` (default: the plan screen).
+
+---
+
 ## Deploying
 
 ```bash
@@ -223,6 +259,7 @@ Deploy all functions:
 for fn in search-venues compute-eta notify; do
   npx supabase functions deploy $fn
 done
+npx supabase functions deploy send-plan-pushes --no-verify-jwt
 ```
 
 ## Setting secrets
