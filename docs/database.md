@@ -59,6 +59,8 @@ A plan with its lifecycle state and venue selection.
 | `travel_mode_default` | travel_mode | Default `drive` |
 | `vibe` | text | Nullable — maps to venue types (Food, Drinks, Coffee, etc.) |
 | `arrival_time` | timestamptz | Nullable — "be there by" time set in LOCKED state |
+| `voting_enabled` | boolean | Default `true`. When false, only the host picks the venue |
+| `automation` | boolean | Default `true`. When false, the plan is never auto-started, auto-ended or reminded (App Review demo plans) |
 | `created_at` | timestamptz | Default `now()` |
 
 **Indexes:**
@@ -70,6 +72,7 @@ A plan with its lifecycle state and venue selection.
 - `plans_select_member` — members can read (via `my_plan_ids()`)
 - `plans_insert_creator` — only creator can insert
 - `plans_update_creator` — only creator can update
+- `plans_delete_creator` — only creator can delete (cascades to members, candidates, votes, messages)
 
 > **Note:** `plans_update_creator` checks `creator_user_id`, not `plan_members.role = 'host'`. In practice they're always the same person today (the creator is auto-inserted as host), but if you ever support promoting another member to host, this policy will need to widen.
 
@@ -93,6 +96,26 @@ Join table linking users to plans with their role and status.
 - `pm_select` — can see members of plans you belong to
 - `pm_insert_self` — can add yourself to a plan
 - `pm_update_self` — can update your own membership (departure status, RSVP)
+
+### `plan_pushes`
+
+Queue of reminder pushes written by `run_plan_automation()` and delivered by the
+`send-plan-pushes` edge function (see edge-functions.md). Server-only: RLS is on
+with no policies.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | Identity |
+| `plan_id` | uuid FK | ON DELETE CASCADE |
+| `user_id` | uuid FK | Recipient, ON DELETE CASCADE |
+| `kind` | text | `tomorrow`, `vote`, `host_pick`, `starting`, `leave`, `ended` |
+| `plan_time` | timestamptz | The plan time the push was for |
+| `title` / `body` | text | Push text |
+| `route` | text | Where a tap lands, nullable |
+| `created_at` | timestamptz | Default `now()` |
+| `sent_at` | timestamptz | Set when claimed for delivery |
+
+**Constraints:** `UNIQUE (plan_id, user_id, kind, plan_time)` — also the dedupe.
 
 ### `plan_invites`
 

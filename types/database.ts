@@ -40,6 +40,8 @@ export type PlanRow = {
   vibe: string | null;
   arrival_time: string | null;
   voting_enabled: boolean;
+  // False: never auto-started, auto-ended or reminded (see run_plan_automation).
+  automation: boolean;
   created_at: string;
 };
 
@@ -175,7 +177,7 @@ export type Database = {
       };
       plans: {
         Row: PlanRow;
-        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'selected_place_lat' | 'selected_place_lng' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled'>;
+        Insert: OptionalFields<Omit<PlanRow, 'id' | 'created_at'>, 'state' | 'scheduled_for' | 'anchor_lat' | 'anchor_lng' | 'selected_place_id' | 'selected_place_name' | 'selected_place_lat' | 'selected_place_lng' | 'travel_mode_default' | 'vibe' | 'arrival_time' | 'voting_enabled' | 'automation'>;
         Update: Partial<Omit<PlanRow, 'id' | 'created_at'>>;
         Relationships: [];
       };
