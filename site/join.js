@@ -4,6 +4,10 @@
 // RPCs and RLS rules as the app: join_plan to join, cast_vote to vote (it also
 // auto-locks the spot), and a plain update for their RSVP. The session lives in
 // localStorage, so coming back to the link shows the plan again.
+//
+// A guest never has to vote. If the host has a pick, the page leads with it
+// ("unless the crew wants something else") and one tap agrees; the plan decides
+// itself at vote_status().decide_at either way.
 (function () {
   'use strict';
 
@@ -19,7 +23,7 @@
     });
   }
 
-  var state = { preview: boot.preview || null, planId: null, uid: null, myName: '', plan: null, tieNotified: false };
+  var state = { preview: boot.preview || null, planId: null, uid: null, myName: '', plan: null, status: null, tieNotified: false, showOthers: false, searched: false };
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -97,7 +101,9 @@
     facts.textContent = '';
     var t = when(p.arrival_time || p.scheduled_for);
     if (t) facts.appendChild(el('li', { text: '🕒 ' + t }));
-    facts.appendChild(el('li', { text: '📍 ' + (p.place_name || (p.voting_enabled ? 'Spot to be voted on' : 'Host is picking the spot')) }));
+    facts.appendChild(el('li', { text: '📍 ' + (p.place_name
+      || (p.pick_name ? (p.host_name ? p.host_name + '’s pick: ' : 'Leading: ') + p.pick_name : null)
+      || (p.voting_enabled ? 'Spot to be voted on' : 'Host is picking the spot')) }));
     if (p.going_count > 0) facts.appendChild(el('li', { text: '🙌 ' + p.going_count + ' going' }));
     if (p.state === 'cancelled' || p.state === 'completed') {
       $('btn-guest').hidden = true;
@@ -159,16 +165,27 @@
   async function loadPlan() {
     var id = state.planId;
     var results = await Promise.all([
-      sb.from('plans').select('id, title, state, scheduled_for, arrival_time, voting_enabled, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng').eq('id', id).single(),
+      sb.from('plans').select('id, title, state, scheduled_for, arrival_time, voting_enabled, anchor_lat, selected_place_id, selected_place_name, selected_place_lat, selected_place_lng').eq('id', id).single(),
       sb.from('plan_members').select('user_id, role, rsvp_status, departure_status, users(display_name)').eq('plan_id', id),
       sb.from('venue_candidates').select('id, place_id, name, category, rating, price_level, photo_urls, address, maps_url, lat, lng').eq('plan_id', id),
       sb.from('venue_swipes').select('user_id, venue_candidate_id, direction').eq('plan_id', id),
+      sb.rpc('vote_status', { p_plan_id: id }).maybeSingle(),
     ]);
     if (results[0].error) throw results[0].error;
     state.plan = results[0].data;
     state.members = results[1].data || [];
     state.candidates = results[2].data || [];
     state.swipes = results[3].data || [];
+    state.status = results[4].data || null;
+
+    // Nobody has opened the deck in the app yet, so there's nothing to vote on.
+    // If the plan has an area, fetch the spots ourselves (once).
+    var p = state.plan;
+    if (p.state === 'open' && p.voting_enabled && !state.candidates.length && p.anchor_lat != null && !state.searched) {
+      state.searched = true;
+      var found = await sb.functions.invoke('search-venues', { body: { plan_id: id } });
+      if (!found.error) return loadPlan();
+    }
     var me = state.members.find(function (m) { return m.user_id === state.uid; });
     if (!me) {
       // Removed from the plan, or the session belongs to someone else.
@@ -226,27 +243,66 @@
       return;
     }
 
-    box.appendChild(el('h2', { text: 'Vote on the spot' }));
-    if (!state.candidates.length) {
-      box.appendChild(el('p', { class: 'muted', text: 'No spots to vote on yet. The host is still adding options.' }));
-      return;
-    }
-    box.appendChild(el('p', { class: 'muted', text: 'Like the places you’d go. The first spot most of the crew likes gets locked in.' }));
-
     var likes = {};
     var mine = {};
     state.swipes.forEach(function (s) {
       if (s.direction === 'right') likes[s.venue_candidate_id] = (likes[s.venue_candidate_id] || 0) + 1;
       if (s.user_id === state.uid) mine[s.venue_candidate_id] = s.direction;
     });
-    var list = el('div', { class: 'venues' });
-    state.candidates
-      .slice()
-      .sort(function (a, b) { return (likes[b.id] || 0) - (likes[a.id] || 0); })
-      .forEach(function (c) {
-        list.appendChild(venueCard(c, { likes: likes[c.id] || 0, mine: mine[c.id] }));
+    var st = state.status || {};
+    var decides = st.decide_at ? when(st.decide_at) : '';
+    var pick = st.host_pick_candidate_id
+      ? state.candidates.find(function (c) { return c.id === st.host_pick_candidate_id; })
+      : null;
+
+    if (!state.candidates.length) {
+      box.appendChild(el('h2', { text: 'The spot' }));
+      box.appendChild(el('p', { class: 'muted', text: 'No spots to pick from yet. ' + hostName() + ' is still adding options, so check back here.' }));
+      return;
+    }
+
+    function byLikes(a, b) { return (likes[b.id] || 0) - (likes[a.id] || 0); }
+    function list(items) {
+      var wrap = el('div', { class: 'venues' });
+      items.slice().sort(byLikes).forEach(function (c) {
+        wrap.appendChild(venueCard(c, { likes: likes[c.id] || 0, mine: mine[c.id] }));
       });
-    box.appendChild(list);
+      return wrap;
+    }
+
+    if (!pick) {
+      box.appendChild(el('h2', { text: 'Pick the spot' }));
+      box.appendChild(el('p', { class: 'muted', text: 'Like the places you’d go. Most likes wins' + (decides ? ', and it settles ' + decides + '.' : '.') }));
+      box.appendChild(list(state.candidates));
+      return;
+    }
+
+    // The host's pick is the default: one tap to agree, nothing needed at all.
+    var agreed = mine[pick.id] === 'right';
+    var others = state.candidates.filter(function (c) { return c.id !== pick.id; });
+    var likedOther = others.some(function (c) { return mine[c.id] === 'right'; });
+    box.appendChild(el('h2', { text: hostName() + '’s pick' }));
+    box.appendChild(venueCard(pick, null));
+    box.appendChild(el('p', { class: 'muted pick-note', text:
+      'Going here unless the crew wants something else.' + (decides ? ' Settles ' + decides + '.' : '') }));
+    box.appendChild(agreed
+      ? el('p', { class: 'pick-agreed', text: '✓ Works for you' + ((likes[pick.id] || 0) > 1 ? ' and ' + ((likes[pick.id] || 0) - 1) + ' more' : '') })
+      : el('button', { type: 'button', class: 'btn btn-primary', text: 'Works for me', onclick: function () { castVote(pick, 'right'); } }));
+
+    if (!others.length) return;
+    if (state.showOthers || likedOther) {
+      box.appendChild(el('h3', { text: 'Something else?' }));
+      box.appendChild(el('p', { class: 'muted', text: 'Like any you’d rather go to. If more of the crew agrees, it wins.' }));
+      box.appendChild(list(others));
+    } else {
+      box.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: 'I’d rather go somewhere else',
+        onclick: function () { state.showOthers = true; renderSpot(); } }));
+    }
+  }
+
+  function hostName() {
+    var host = (state.members || []).find(function (m) { return m.role === 'host'; });
+    return (host && host.users && host.users.display_name) || 'The host';
   }
 
   function venueCard(v, vote) {

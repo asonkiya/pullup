@@ -17,7 +17,8 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
+import * as Location from 'expo-location';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, VENUE_PROVIDER } from '@/constants';
 import { NavHead, VibeChip } from '@/components/ui';
 import { PlacePicker, type PickedPlace } from '@/components/PlacePicker';
 
@@ -155,8 +156,29 @@ export default function CreatePlanScreen() {
       }
     }
 
+    // Not awaited: the host goes straight on to inviting people.
+    if (!place) prefetchVenues(plan.id);
+
     setLoading(false);
     router.replace(`/plan/${plan.id}/invite`);
+  }
+
+  // Fill the plan's list of spots now. It used to be filled only when someone
+  // opened the swipe deck in the app, so a guest who opened the invite link
+  // first (on the web, say) found nothing to vote on.
+  async function prefetchVenues(planId: string) {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { data: { session } } = await supabase.auth.getSession();
+      await supabase.functions.invoke('search-venues', {
+        body: { plan_id: planId, provider: VENUE_PROVIDER, anchor_lat: pos.coords.latitude, anchor_lng: pos.coords.longitude },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+    } catch {
+      // The deck fetches them itself when it's opened.
+    }
   }
 
   function whenLabel(): string {

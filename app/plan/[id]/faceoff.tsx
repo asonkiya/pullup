@@ -13,7 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AUTO_SELECT_THRESHOLD, AUTO_SELECT_MIN_VOTES } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS } from '@/constants';
 import { NavHead, Skeleton } from '@/components/ui';
 import type { VenueCandidateRow } from '@/types/database';
 
@@ -52,19 +52,8 @@ export default function FaceoffScreen() {
 
     // Recompute the tie from the DB so this screen works no matter how the
     // host arrived (venues screen, push tap, plan-detail banner).
-    const [{ count: totalMembers }, { data: allRight }] = await Promise.all([
-      supabase.from('plan_members').select('*', { count: 'exact', head: true }).eq('plan_id', id!),
-      supabase.from('venue_swipes').select('venue_candidate_id').eq('plan_id', id!).eq('direction', 'right'),
-    ]);
-    const counts = new Map<string, number>();
-    for (const s of allRight ?? []) {
-      counts.set(s.venue_candidate_id, (counts.get(s.venue_candidate_id) ?? 0) + 1);
-    }
-    const over = [...counts.entries()].filter(
-      ([, c]) => totalMembers && c >= AUTO_SELECT_MIN_VOTES && c / totalMembers >= AUTO_SELECT_THRESHOLD
-    );
-    const maxCount = over.length ? Math.max(...over.map(([, c]) => c)) : 0;
-    const leaderIds = over.filter(([, c]) => c === maxCount).map(([vid]) => vid);
+    const { data: vs } = await supabase.rpc('vote_status', { p_plan_id: id! }).maybeSingle();
+    const leaderIds = vs?.tie ? vs.leader_ids : [];
 
     if (leaderIds.length < 2 || plan?.state !== 'open') {
       setPair(null);

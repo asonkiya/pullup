@@ -62,6 +62,7 @@ module.exports = async (req, res) => {
       : `You're invited to ${preview.plan_title}`;
     const bits = [];
     if (preview.place_name) bits.push(preview.place_name);
+    else if (preview.pick_name) bits.push(`${preview.pick_name}?`);
     if (preview.going_count > 0) bits.push(`${preview.going_count} going`);
     bits.push('Tap to join on Pull Up');
     description = bits.join(' · ');
