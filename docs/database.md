@@ -223,6 +223,29 @@ Tracks when a user is actively sharing their location for a plan.
 - `lss_select` — any plan member can read all sessions for the plan
 - `lss_insert_self` / `lss_update_self` — users can only create/modify their own sessions
 
+**Arriving ends sharing** (`20261119000000_auto_arrive.sql`): a trigger on
+`location_points` checks each uploaded fix against the plan's spot, treating
+the fix as a circle of radius `accuracy_m`. With `d` the distance to the spot
+and `a` the accuracy:
+
+| Fix | Rule | Effect |
+|---|---|---|
+| At the spot | `d - a <= 30` and `a <= 30` | Starts the session's clock (`near_since`) |
+| Away | `d - a > 30` | Clears the clock |
+| Unclear | anything else (vague fix, typical indoors) | Nothing |
+
+Two minutes on the clock means arrived, confirmed by the next good fix or by
+the per-minute `arrive-due-sharers` cron (a phone standing still sends no
+fixes). Arriving sets `departure_status` to `arrived`, stops the session, and
+queues an "X is here" push to the crew plus "You're here. Location sharing is
+off." to the person. It only applies to a locked plan, no earlier than 3 hours
+before it. Setting `arrived` by hand stops the session too.
+
+The app has to send fixes that precise: within 400 m of the spot,
+`lib/locationSharing.ts` switches from coarse fixes every 150 m to GPS-grade
+fixes every 10 m. The table is in the realtime publication so the app can stop
+its GPS when the server ends a session.
+
 ### `location_points`
 
 GPS pings from active location share sessions.

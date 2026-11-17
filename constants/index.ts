@@ -116,6 +116,11 @@ export const SHADOWS = {
 // ─── Non-UI constants (unchanged) ─────────────────────────────────────────────
 export const LOCATION_UPDATE_INTERVAL_MS    = 90_000;
 export const LOCATION_DISTANCE_THRESHOLD_M  = 150;
+// Within this distance of the spot, location switches to GPS-grade fixes every
+// few metres so the server can tell when you've arrived (30 m, held 2 minutes).
+export const LOCATION_NEAR_SPOT_M               = 400;
+export const LOCATION_NEAR_DISTANCE_THRESHOLD_M = 10;
+export const LOCATION_NEAR_UPDATE_INTERVAL_MS   = 15_000;
 export const DEFAULT_SHARE_SESSION_HOURS    = 6;
 // The auto-select rule runs in SQL (plan_vote_standing, used by cast_vote and
 // vote_status): once half the crew has voted, a spot locks with this many likes
@@ -133,3 +138,7 @@ export const AUTO_SELECT_MIN_VOTES         = 2;
 export type VenueProvider = 'google' | 'mapbox';
 export const VENUE_PROVIDER: VenueProvider =
   (process.env.EXPO_PUBLIC_VENUE_PROVIDER as VenueProvider) === 'mapbox' ? 'mapbox' : 'google';
+
+// ─── Web ──────────────────────────────────────────────────────────────────────
+// Join links that work without the app (site/api/join.js renders them).
+export const WEB_JOIN_URL = 'https://heypullup.com/join';

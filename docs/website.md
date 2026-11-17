@@ -10,6 +10,7 @@ every PR gets a preview URL. No build step; `site/vercel.json` holds the routing
 | `/privacy-policy` | Privacy policy |
 | `/support` | Support + FAQ (App Store Connect support URL) |
 | `/join/<token>` | Guest join page (`api/join.js` renders `join.html` + `join.js`); see below |
+| `/join/<token>/calendar.ics` | The plan as a calendar event with a 1-hour reminder (`api/calendar.js`) |
 | `/.well-known/apple-app-site-association` | Universal links: `/join/*` opens the app |
 
 With the app installed, iOS opens `https://heypullup.com/join/<token>` straight
@@ -53,6 +54,12 @@ somewhere else". With no pick it lists the spots to like. Either way the plan
 settles itself at `vote_status().decide_at` (see "How a plan decides" in
 edge-functions.md). If the plan has an area but no spots yet, the page calls
 `search-venues` itself.
+
+Two things keep a guest in the loop without the app. **Add to calendar** (shown
+whenever the plan has a time) opens the `.ics` above, or a Google Calendar link
+on Android. Once the spot is locked, **Send to the chat** opens the share sheet
+with "📍 Tacos on Franklin, Fri 7:30 PM" and the join link, whose preview shows
+the spot; without a share sheet it copies the text.
 
 The session is kept in localStorage, so reopening the link returns to the plan.
 Anonymous accounts can't create plans (`plans_insert_creator`). Web guests get

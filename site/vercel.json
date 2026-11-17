@@ -6,6 +6,7 @@
     "api/join.js": { "includeFiles": "join.html" }
   },
   "rewrites": [
+    { "source": "/join/:token/calendar.ics", "destination": "/api/calendar?token=:token" },
     { "source": "/join/:token", "destination": "/api/join?token=:token" }
   ],
   "headers": [
