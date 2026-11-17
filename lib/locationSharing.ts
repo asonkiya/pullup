@@ -5,10 +5,30 @@ import { supabase } from '@/lib/supabase';
 import {
   LOCATION_UPDATE_INTERVAL_MS,
   LOCATION_DISTANCE_THRESHOLD_M,
+  LOCATION_NEAR_SPOT_M,
+  LOCATION_NEAR_DISTANCE_THRESHOLD_M,
+  LOCATION_NEAR_UPDATE_INTERVAL_MS,
   VENUE_PROVIDER,
 } from '@/constants';
 
-type ActiveSession = { id: string; plan_id: string; expires_at: string };
+type ActiveSession = {
+  id: string;
+  plan_id: string;
+  expires_at: string;
+  plans: { selected_place_lat: number | null; selected_place_lng: number | null } | null;
+};
+
+// 'far' is cheap and coarse; 'near' is precise enough for the server to tell
+// when you've arrived (it needs fixes good to 30 m; see auto_arrive.sql).
+type WatchMode = 'far' | 'near';
+
+function metersBetween(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const rad = Math.PI / 180;
+  const a =
+    Math.sin(((lat2 - lat1) * rad) / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lng2 - lng1) * rad) / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
 
 let requestSync: (() => void) | null = null;
 
@@ -32,6 +52,8 @@ export function refreshLocationSharing() {
  */
 export function useLocationSharing(userId: string | null) {
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const modeRef = useRef<WatchMode>('far');
+  const lastEtaAtRef = useRef(0);
   const sessionsRef = useRef<ActiveSession[]>([]);
   const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -61,6 +83,10 @@ export function useLocationSharing(userId: string | null) {
       );
       if (error) return;
 
+      // Close to the spot, fixes come every few metres; the ETA barely moves.
+      if (modeRef.current === 'near' && Date.now() - lastEtaAtRef.current < LOCATION_UPDATE_INTERVAL_MS) return;
+      lastEtaAtRef.current = Date.now();
+
       const { data: { session: auth } } = await supabase.auth.getSession();
       if (!auth) return;
       const planIds = [...new Set(sessions.map((s) => s.plan_id))];
@@ -74,16 +100,37 @@ export function useLocationSharing(userId: string | null) {
       }
     }
 
+    // Tighten up within reach of any spot we're sharing towards, loosen
+    // again when we leave.
+    function wantedMode(loc: Location.LocationObject): WatchMode {
+      const near = sessionsRef.current.some((s) => {
+        const lat = s.plans?.selected_place_lat;
+        const lng = s.plans?.selected_place_lng;
+        return lat != null && lng != null
+          && metersBetween(loc.coords.latitude, loc.coords.longitude, lat, lng) <= LOCATION_NEAR_SPOT_M;
+      });
+      return near ? 'near' : 'far';
+    }
+
     async function startWatch() {
       const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== 'granted' || watchRef.current || !alive) return;
+      const near = modeRef.current === 'near';
       watchRef.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: LOCATION_DISTANCE_THRESHOLD_M,
-          timeInterval: LOCATION_UPDATE_INTERVAL_MS,
+          accuracy: near ? Location.Accuracy.High : Location.Accuracy.Balanced,
+          distanceInterval: near ? LOCATION_NEAR_DISTANCE_THRESHOLD_M : LOCATION_DISTANCE_THRESHOLD_M,
+          timeInterval: near ? LOCATION_NEAR_UPDATE_INTERVAL_MS : LOCATION_UPDATE_INTERVAL_MS,
         },
-        (loc) => uploadPoint(loc)
+        (loc) => {
+          uploadPoint(loc);
+          const mode = wantedMode(loc);
+          if (mode !== modeRef.current) {
+            modeRef.current = mode;
+            stopWatch();
+            startWatch();
+          }
+        }
       );
       if (!alive) stopWatch();
     }
@@ -91,12 +138,12 @@ export function useLocationSharing(userId: string | null) {
     async function sync() {
       const { data } = await supabase
         .from('location_share_sessions')
-        .select('id, plan_id, expires_at')
+        .select('id, plan_id, expires_at, plans(selected_place_lat, selected_place_lng)')
         .eq('user_id', uid)
         .eq('status', 'active')
         .gt('expires_at', new Date().toISOString());
       if (!alive) return;
-      sessionsRef.current = (data ?? []) as ActiveSession[];
+      sessionsRef.current = (data ?? []) as unknown as ActiveSession[];
       // Re-sync the moment the soonest session expires, so the watch stops on
       // time even if no realtime/app-state event arrives.
       if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
@@ -109,6 +156,7 @@ export function useLocationSharing(userId: string | null) {
         startWatch();
       } else {
         stopWatch();
+        modeRef.current = 'far';
       }
     }
 
