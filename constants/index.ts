@@ -133,3 +133,7 @@ export const AUTO_SELECT_MIN_VOTES         = 2;
 export type VenueProvider = 'google' | 'mapbox';
 export const VENUE_PROVIDER: VenueProvider =
   (process.env.EXPO_PUBLIC_VENUE_PROVIDER as VenueProvider) === 'mapbox' ? 'mapbox' : 'google';
+
+// ─── Web ──────────────────────────────────────────────────────────────────────
+// Join links that work without the app (site/api/join.js renders them).
+export const WEB_JOIN_URL = 'https://heypullup.com/join';

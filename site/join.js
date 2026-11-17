@@ -75,6 +75,49 @@
     return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
   }
 
+  // "Fri 7:30 PM": for text that gets read later, where "Tonight" would go stale.
+  function shortWhen(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // Android phones mostly run Google Calendar, which takes a link; everything
+  // else gets the .ics, which iOS opens straight into "Add to Calendar".
+  function calendarUrl(p) {
+    var at = p.arrival_time || p.scheduled_for;
+    if (!at || !token) return null;
+    if (!/Android/i.test(navigator.userAgent)) return '/join/' + token + '/calendar.ics';
+    function stamp(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+    var start = new Date(at);
+    var end = new Date(start.getTime() + 2 * 3600 * 1000);
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+      + '&text=' + encodeURIComponent(p.title)
+      + '&dates=' + stamp(start) + '/' + stamp(end)
+      + (p.selected_place_name ? '&location=' + encodeURIComponent(p.selected_place_name) : '')
+      + '&details=' + encodeURIComponent("Who's coming and where: " + location.origin + '/join/' + token);
+  }
+
+  // Put the settled plan back in the group chat: the share sheet where there
+  // is one, the clipboard otherwise. The link's preview already shows the spot.
+  async function sendToChat(btn) {
+    var p = state.plan;
+    var t = shortWhen(p.arrival_time || p.scheduled_for);
+    var text = '📍 ' + p.selected_place_name + (t ? ', ' + t : '');
+    var url = location.origin + '/join/' + token;
+    logEvent('spot_shared', { source: 'web' });
+    if (navigator.share) {
+      try { await navigator.share({ text: text, url: url }); } catch (e) { /* closed the sheet */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text + '\n' + url);
+      btn.textContent = 'Copied. Paste it in the chat';
+    } catch (e) {
+      window.prompt('Copy this into the chat', text + ' ' + url);
+    }
+  }
+
   function logEvent(name, props) {
     if (!sb || !state.uid) return;
     sb.from('analytics_events').insert({
@@ -210,6 +253,13 @@
       b.classList.toggle('on', b.getAttribute('data-rsvp') === state.me.rsvp_status);
     });
 
+    var cal = p.state === 'cancelled' || p.state === 'completed' ? null : calendarUrl(p);
+    $('btn-calendar').hidden = !cal;
+    if (cal) {
+      $('btn-calendar').href = cal;
+      if (/^https:/.test(cal)) { $('btn-calendar').target = '_blank'; $('btn-calendar').rel = 'noopener'; }
+    }
+
     renderSpot();
     renderPeople();
     show('view-plan');
@@ -234,6 +284,8 @@
         href: v.maps_url || mapsUrl(p.selected_place_name, p.selected_place_lat, p.selected_place_lng),
         text: 'Open in Maps',
       }));
+      box.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: 'Send to the chat',
+        onclick: function (e) { sendToChat(e.currentTarget); } }));
       return;
     }
 
@@ -382,6 +434,7 @@
     var name = $('name-input').value.trim();
     if (name) join(name);
   });
+  $('btn-calendar').addEventListener('click', function () { logEvent('calendar_added', { source: 'web' }); });
   $('rsvp').addEventListener('click', function (e) {
     var s = e.target.getAttribute && e.target.getAttribute('data-rsvp');
     if (s) setRsvp(s);

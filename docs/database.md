@@ -223,6 +223,15 @@ Tracks when a user is actively sharing their location for a plan.
 - `lss_select` — any plan member can read all sessions for the plan
 - `lss_insert_self` / `lss_update_self` — users can only create/modify their own sessions
 
+**Arriving ends sharing** (`20261119000000_auto_arrive.sql`): a trigger on
+`location_points` checks each uploaded fix against the plan's spot. Within
+100 m (and accuracy of 100 m or better, plan locked, no earlier than 3 hours
+before the plan), it sets the member's `departure_status` to `arrived`, stops
+their session, and queues an "X is here" push to the crew plus "You're here.
+Location sharing is off." to them. Setting `arrived` by hand stops the session
+too. The table is in the realtime publication so the app can stop its GPS when
+the server ends a session.
+
 ### `location_points`
 
 GPS pings from active location share sessions.

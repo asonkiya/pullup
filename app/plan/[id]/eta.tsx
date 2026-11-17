@@ -56,14 +56,16 @@ export default function EtaDashboardScreen() {
   const [venueName, setVenueName] = useState<string | null>(null);
   const [travelMode, setTravelMode] = useState<string | null>(null);
   const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
+  const [arrivedIds, setArrivedIds] = useState<string[]>([]);
   const cameraRef = useRef<MapboxGL.Camera | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUid(user?.id ?? null);
-      if (user) restoreMySession(user.id);
     });
+    restoreMySession();
+    fetchArrived();
     AsyncStorage.getItem(ETA_ONLY_PREF_KEY)
       .then((v) => { if (v === '1') setEtaOnly(true); })
       .catch(() => {});
@@ -80,6 +82,15 @@ export default function EtaDashboardScreen() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'location_points' }, () => {
         fetchMemberLocations();
       })
+      // The server stops a share when its owner arrives (or the plan ends).
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'location_share_sessions', filter: `plan_id=eq.${id}` }, () => {
+        restoreMySession();
+        fetchMemberLocations();
+        refreshLocationSharing();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plan_members', filter: `plan_id=eq.${id}` }, () => {
+        fetchArrived();
+      })
       .subscribe();
 
     return () => {
@@ -88,21 +99,37 @@ export default function EtaDashboardScreen() {
   }, [id]);
 
   // Sharing persists app-wide (root layout hook), so returning to this
-  // screen must reflect an already-running session.
-  async function restoreMySession(userId: string) {
-    const { data } = await supabase
+  // screen must reflect an already-running session, and one the server has
+  // since stopped.
+  async function restoreMySession() {
+    const { data: { session: auth } } = await supabase.auth.getSession();
+    if (!auth) return;
+    const { data, error } = await supabase
       .from('location_share_sessions')
       .select('id, eta_only')
       .eq('plan_id', id!)
-      .eq('user_id', userId)
+      .eq('user_id', auth.user.id)
       .eq('status', 'active')
       .gt('expires_at', new Date().toISOString())
       .maybeSingle();
+    if (error) return;
     if (data) {
       setSessionId(data.id);
       setIsSharing(true);
       setEtaOnly(data.eta_only);
+    } else {
+      setSessionId(null);
+      setIsSharing(false);
     }
+  }
+
+  async function fetchArrived() {
+    const { data } = await supabase
+      .from('plan_members')
+      .select('user_id')
+      .eq('plan_id', id!)
+      .eq('departure_status', 'arrived');
+    setArrivedIds((data ?? []).map((m) => m.user_id));
   }
 
   // Applies immediately to a running share; otherwise used when sharing starts.
@@ -392,12 +419,16 @@ export default function EtaDashboardScreen() {
         )}
 
         {/* Share / Stop banner */}
-        {!isSharing ? (
+        {uid != null && arrivedIds.includes(uid) && !isSharing ? (
+          <View style={styles.sharingBanner}>
+            <Text style={styles.sharingText}>You're here. Location sharing is off.</Text>
+          </View>
+        ) : !isSharing ? (
           <View style={styles.consent}>
             <Text style={styles.consentTitle}>Share your ETA</Text>
             <Text style={styles.consentBody}>
-              Only for this plan. Only while you choose. Automatically ends{' '}
-              {DEFAULT_SHARE_SESSION_HOURS}h after you start.
+              Only for this plan. Only while you choose. Ends on its own when you
+              arrive, or {DEFAULT_SHARE_SESSION_HOURS}h after you start.
             </Text>
             <TouchableOpacity style={styles.shareBtn} onPress={startSharing}>
               <Text style={styles.shareBtnText}>Share ETA for this plan</Text>
@@ -479,7 +510,9 @@ export default function EtaDashboardScreen() {
                   <Text style={styles.etaMode}>{item.mode} · {fmtDist(item.distance_meters)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  {item.status === 'stopped' ? (
+                  {arrivedIds.includes(item.user_id) ? (
+                    <Text style={styles.etaDuration}>Here</Text>
+                  ) : item.status === 'stopped' ? (
                     <Text style={styles.etaNotSharing}>Not sharing</Text>
                   ) : (
                     <>

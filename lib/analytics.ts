@@ -12,6 +12,7 @@ import { supabase } from './supabase';
  *   app_open — throttled to once per 30 min of foreground
  *   push_opened — notification tapped ({ event })
  *   invite_shared — invite link shared or copied ({ method })
+ *   spot_shared — the locked spot sent back to the group chat
  *   crew_invited — recent-crew member pinged from the invite screen
  *   plan_state_changed — host started/ended/cancelled/reopened ({ from, to })
  *   plan_joined carries { source: 'link' } and the inviter's id
@@ -31,6 +32,7 @@ export type AnalyticsEvent =
   | 'app_open'
   | 'push_opened'
   | 'invite_shared'
+  | 'spot_shared'
   | 'crew_invited'
   | 'plan_state_changed'
   | 'affiliate_click'

@@ -18,7 +18,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
 import { rideUrl, directionsUrl } from '@/lib/affiliate';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, SHADOWS, AVATAR_COLORS, WEB_JOIN_URL } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, Label, Card, VibeChip, StatePill, ProgressBar, SkeletonList } from '@/components/ui';
 import { LiveMap, type LiveMember } from '@/components/LiveMap';
 import type { PlanRow, PlanMemberRow, UserRow, DepartureStatus, VenueCandidateRow } from '@/types/database';
@@ -335,6 +335,21 @@ export default function PlanDetailScreen() {
     fetchAll();
   }
 
+  // Put the settled plan back where the crew actually talks. The web link's
+  // preview shows the spot, and works for people without the app.
+  async function sendSpotToChat() {
+    if (!currentUserId || !plan?.selected_place_name) return;
+    const { data: invite } = await supabase
+      .from('plan_invites')
+      .insert({ plan_id: id!, inviter_user_id: currentUserId, status: 'pending', expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+      .select().single();
+    if (!invite) return;
+    const at = plan.arrival_time ?? plan.scheduled_for;
+    const when = at ? `, ${new Date(at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+    logEvent('spot_shared', { planId: id!, properties: { invite_id: invite.id } });
+    Share.share({ message: `📍 ${plan.selected_place_name}${when}\n${WEB_JOIN_URL}/${invite.token}` });
+  }
+
   async function updateDepartureStatus(status: DepartureStatus) {
     if (!currentUserId) return;
     const { error } = await supabase
@@ -566,6 +581,7 @@ export default function PlanDetailScreen() {
                   <HButton label="Website" variant="ghost" size="sm" fullWidth onPress={() => Linking.openURL(venueDetails.website_url!)} />
                 )}
               </View>
+              <HButton label="Send to the chat" variant="ghost" size="sm" fullWidth onPress={sendSpotToChat} />
             </View>
           </Card>
 
@@ -728,7 +744,7 @@ export default function PlanDetailScreen() {
               </View>
             )}
             <Text style={styles.footerHint}>
-              {myStatus === 'not_left' ? "Tap when you leave — your crew will know." : "Flips to \"I've arrived\" once you're moving."}
+              {myStatus === 'not_left' ? "Tap when you leave — your crew will know." : "Share your ETA and you're marked here when you arrive."}
             </Text>
             {myStatus === 'not_left' && destination && (
               <HButton
