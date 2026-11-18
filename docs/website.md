@@ -41,16 +41,19 @@ People without the app join from the browser with just a name:
 1. `api/join.js` calls `invite_preview(token)` with the anon key and renders
    `join.html` with the plan's title, host and place in the Open Graph tags, so
    the link preview in iMessage/WhatsApp shows the actual plan.
-2. "Join as a guest" → name → Supabase **anonymous sign-in**
-   (`display_name` in user metadata; `handle_new_user` creates the profile) →
-   `join_plan(token)`.
+2. The invite card has the name field on it: name → **I'm in** → Supabase
+   **anonymous sign-in** (`display_name` in user metadata; `handle_new_user`
+   creates the profile) → `join_plan(token)`, which joins as "going". A browser
+   that has joined a plan before skips the name, so it's one tap.
 3. The plan view: RSVP, the spot, who's coming, and a nudge to get the app for
    ETA sharing on the day.
 
 A guest never has to vote. If the host has a pick, the page leads with it:
 "Sam's pick: Tacos on Franklin. Going here unless the crew wants something
 else", one tap on **Works for me**, and the other spots behind "I'd rather go
-somewhere else". With no pick it lists the spots to like. Either way the plan
+somewhere else". With no pick it lists the spots to like. Lists show four
+spots (the crew's favourites, then the best rated, plus any the guest liked)
+with "Show N more" for the rest. Either way the plan
 settles itself at `vote_status().decide_at` (see "How a plan decides" in
 edge-functions.md). If the plan has an area but no spots yet, the page calls
 `search-venues` itself.
