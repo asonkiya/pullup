@@ -207,7 +207,7 @@ export default function PlanDetailScreen() {
       .select().single();
     if (!invite) return;
     logEvent('invite_shared', { planId: id!, properties: { method: 'share', invite_id: invite.id, from: 'crew_row' } });
-    Share.share({ message: `Pull up with us: ${plan.title}\npullup://join/${invite.token}` });
+    Share.share({ message: `Pull up with us: ${plan.title}\n${WEB_JOIN_URL}/${invite.token}` });
   }
 
   function notifyMembers(event: string, extra?: Record<string, string>) {

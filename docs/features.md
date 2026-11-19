@@ -32,9 +32,9 @@ End-to-end walkthroughs of each major feature, mapping the user-facing flow to t
 
 ### Flow
 1. After creating a plan (or from the plan detail), user lands on `app/plan/[id]/invite.tsx`
-2. Sees a dashed-bordered link card with `pullup://join/{token}` and a **Copy** button
+2. Sees a dashed-bordered link card with `heypullup.com/join/{token}` and a **Copy** button
 3. Taps **Share link** → native iOS/Android share sheet → sends via iMessage / WhatsApp / etc.
-4. Recipient taps the link → if app installed, deep-link routes to `app/join/[token].tsx` → joins as a `plan_member` → push notification to host
+4. Recipient taps the link → the guest join page (see website.md), where they can join from the browser or tap **Open in Pull Up** (`pullup://join/{token}`), which routes to `app/join/[token].tsx` → joins as a `plan_member` → push notification to host. With universal links (build 8), iOS skips the page and opens the app directly.
 
 ### Code
 - Invite screen: `app/plan/[id]/invite.tsx`

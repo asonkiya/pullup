@@ -35,7 +35,8 @@ export default function HomeScreen() {
   const [joinInput, setJoinInput] = useState('');
   const router = useRouter();
 
-  // Accepts a full pullup://join/TOKEN link, an exp:// dev link, or a raw code.
+  // Accepts a full invite link (https://heypullup.com/join/TOKEN, the older
+  // pullup://join/TOKEN, or an exp:// dev link) or a raw code.
   function submitJoinCode() {
     const raw = joinInput.trim();
     const match = raw.match(/join\/([A-Za-z0-9]+)/);

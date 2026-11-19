@@ -126,7 +126,7 @@ Shareable invite tokens for joining plans.
 |---|---|---|
 | `id` | uuid PK | Auto-generated |
 | `plan_id` | uuid FK | References `plans(id)` ON DELETE CASCADE |
-| `token` | text | Unique, used in deep links (`pullup://join/{token}`) |
+| `token` | text | Unique, used in invite links (`https://heypullup.com/join/{token}`, `pullup://join/{token}`) |
 | `inviter_user_id` | uuid FK | References `users(id)` |
 | `invitee_contact` | text | Nullable |
 | `status` | invite_status | Default `pending` |

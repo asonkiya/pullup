@@ -13,7 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { logEvent } from '@/lib/analytics';
-import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
+import { COLORS, FONTS, FONT_SIZE, SPACING, RADIUS, WEB_JOIN_URL } from '@/constants';
 import { NavHead, HButton, Avatar, AvatarRow, VibeChip } from '@/components/ui';
 import type { PlanRow } from '@/types/database';
 
@@ -31,7 +31,7 @@ export default function InviteScreen() {
   const [crew, setCrew] = useState<CrewSuggestion[]>([]);
   const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
 
-  const inviteLink = inviteToken ? `pullup://join/${inviteToken}` : null;
+  const inviteLink = inviteToken ? `${WEB_JOIN_URL}/${inviteToken}` : null;
 
   useEffect(() => {
     (async () => {
@@ -108,7 +108,7 @@ export default function InviteScreen() {
     const token = await getOrCreateInviteToken();
     if (!token) return;
     logEvent('invite_shared', { planId: id!, properties: { method: 'copy' } });
-    await Clipboard.setStringAsync(`pullup://join/${token}`);
+    await Clipboard.setStringAsync(`${WEB_JOIN_URL}/${token}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -117,7 +117,7 @@ export default function InviteScreen() {
     const token = await getOrCreateInviteToken();
     if (!token) return;
     logEvent('invite_shared', { planId: id!, properties: { method: 'share' } });
-    Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\npullup://join/${token}` });
+    Share.share({ message: `Pull up with us: ${plan?.title ?? ''}\n${WEB_JOIN_URL}/${token}` });
   }
 
   // Pushes a join link to someone from a past plan. They join themselves —
@@ -154,7 +154,7 @@ export default function InviteScreen() {
         {/* Link card */}
         <View style={styles.linkCard}>
           <Text style={styles.linkText} numberOfLines={1}>
-            {inviteLink ?? `pullup.app/j/…`}
+            {inviteLink?.replace('https://', '') ?? 'heypullup.com/join/…'}
           </Text>
           <TouchableOpacity onPress={copyLink} activeOpacity={0.7}>
             <Text style={styles.copyBtn}>{copied ? 'Copied!' : 'Copy'}</Text>

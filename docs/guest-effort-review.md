@@ -49,9 +49,9 @@ Ordered by how badly it hurts.
 
 1. **The shipped app shares `pullup://` links.** Build 7 (in review) sends
    `pullup://join/<token>`, which most chat apps don't make tappable and which
-   never reaches the web page. The https link is only on the build 8 branch.
-   The change is JS-only, so it can go out over the air once build 7 is
-   approved.
+   never reaches the web page. *Fixed on main: the app now shares
+   `https://heypullup.com/join/<token>`. It's JS-only, so it reaches phones
+   with the over-the-air update once build 7 is approved.*
 2. **The first guest can arrive to an empty page.** Spots to vote on are only
    fetched when someone opens the swipe deck in the app (`venues.tsx` calls
    `search-venues`). A host who creates a plan and shares the link straight
