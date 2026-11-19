@@ -31,31 +31,23 @@
 
   <main class="invite">
     <div class="wrap">
-      <!-- 1. Invite: who, what, where, then join as guest or open the app. -->
+      <!-- 1. Invite: who, what, where, and a name to join with. One step. -->
       <section class="card" id="view-invite" hidden>
         <img class="app-icon" src="/img/icon-512.png" alt="">
         <p class="eyebrow" id="inv-host"></p>
         <h1 id="inv-title">You're invited to a plan</h1>
         <ul class="facts" id="inv-facts"></ul>
-        <button class="btn btn-primary" id="btn-guest" type="button">Join as a guest</button>
-        <a class="btn btn-ghost" id="btn-open-app" href="#">I have the app</a>
-        <p class="fine">No download needed. Just add your name.</p>
-      </section>
-
-      <!-- 2. Name. -->
-      <section class="card" id="view-name" hidden>
-        <h1>What should we call you?</h1>
-        <p>Your crew sees this name in the plan.</p>
         <form id="name-form">
           <input class="field" id="name-input" name="name" type="text" autocomplete="given-name"
-                 maxlength="40" placeholder="Your name" required>
-          <button class="btn btn-primary" id="btn-join" type="submit">Join plan</button>
+                 maxlength="40" placeholder="Your name" aria-label="Your name" required>
+          <button class="btn btn-primary" id="btn-join" type="submit">I'm in</button>
         </form>
         <p class="error" id="name-error" hidden></p>
-        <p class="fine">By joining you agree to our <a href="/privacy-policy">privacy policy</a>.</p>
+        <a class="btn btn-ghost" id="btn-open-app" href="#">I have the app</a>
+        <p class="fine" id="inv-fine">No download needed. By joining you agree to our <a href="/privacy-policy">privacy policy</a>.</p>
       </section>
 
-      <!-- 3. Joined: the plan. -->
+      <!-- 2. Joined: the plan. -->
       <section class="plan" id="view-plan" hidden>
         <div class="card plan-head">
           <p class="eyebrow" id="plan-when"></p>
@@ -84,7 +76,7 @@
         </div>
       </section>
 
-      <!-- 4. Dead link. -->
+      <!-- 3. Dead link. -->
       <section class="card" id="view-gone" hidden>
         <h1>This invite has expired</h1>
         <p>Ask whoever sent it for a fresh link.</p>

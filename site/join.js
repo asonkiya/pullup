@@ -12,6 +12,7 @@
   'use strict';
 
   var APP_STORE = 'https://apps.apple.com/app/id6790259365';
+  var SHORT_LIST = 4;
   var boot = window.__JOIN__ || {};
   var token = boot.token || (location.pathname.match(/^\/join\/([A-Za-z0-9_-]{8,64})\/?$/) || [])[1] || '';
   var joinedKey = 'pullup-joined:' + token;
@@ -23,14 +24,14 @@
     });
   }
 
-  var state = { preview: boot.preview || null, planId: null, uid: null, myName: '', plan: null, status: null, tieNotified: false, showOthers: false, searched: false };
+  var state = { preview: boot.preview || null, planId: null, uid: null, myName: '', plan: null, status: null, tieNotified: false, showOthers: false, showAll: false, searched: false, guestName: null };
 
   // ── helpers ────────────────────────────────────────────────
 
   function $(id) { return document.getElementById(id); }
 
   function show(id) {
-    ['view-invite', 'view-name', 'view-plan', 'view-gone', 'view-error'].forEach(function (v) {
+    ['view-invite', 'view-plan', 'view-gone', 'view-error'].forEach(function (v) {
       $(v).hidden = v !== id;
     });
     window.scrollTo(0, 0);
@@ -148,23 +149,14 @@
       || (p.pick_name ? (p.host_name ? p.host_name + '’s pick: ' : 'Leading: ') + p.pick_name : null)
       || (p.voting_enabled ? 'Spot to be voted on' : 'Host is picking the spot')) }));
     if (p.going_count > 0) facts.appendChild(el('li', { text: '🙌 ' + p.going_count + ' going' }));
-    if (p.state === 'cancelled' || p.state === 'completed') {
-      $('btn-guest').hidden = true;
-      facts.appendChild(el('li', { text: p.state === 'cancelled' ? 'This plan was cancelled.' : 'This plan has ended.' }));
-    }
+    var over = p.state === 'cancelled' || p.state === 'completed';
+    if (over) facts.appendChild(el('li', { text: p.state === 'cancelled' ? 'This plan was cancelled.' : 'This plan has ended.' }));
+    $('name-form').hidden = over;
+    $('inv-fine').hidden = over;
+    // Already a guest from another invite: same name, so joining is one tap.
+    $('name-input').hidden = !!state.guestName;
+    $('name-input').required = !state.guestName;
     show('view-invite');
-  }
-
-  async function startJoin() {
-    if (!sb) return fail("Joining on the web isn't available right now. Get the app to join.");
-    var session = (await sb.auth.getSession()).data.session;
-    if (session) {
-      // Already a guest from another invite: reuse the same name.
-      var me = await sb.from('users').select('display_name').eq('id', session.user.id).maybeSingle();
-      return join(me.data && me.data.display_name);
-    }
-    show('view-name');
-    $('name-input').focus();
   }
 
   async function join(name) {
@@ -195,7 +187,6 @@
       }
     } catch (e) {
       console.error(e);
-      if ($('view-name').hidden) return fail();
       $('name-error').textContent = "Couldn't join. Check your connection and try again.";
       $('name-error').hidden = false;
     } finally {
@@ -313,12 +304,21 @@
       return;
     }
 
-    function byLikes(a, b) { return (likes[b.id] || 0) - (likes[a.id] || 0); }
+    function byLikes(a, b) { return (likes[b.id] || 0) - (likes[a.id] || 0) || (b.rating || 0) - (a.rating || 0); }
+    // A long list reads as homework, so lead with a few: the crew's favourites,
+    // then the best rated, plus anything this guest already liked.
     function list(items) {
       var wrap = el('div', { class: 'venues' });
-      items.slice().sort(byLikes).forEach(function (c) {
+      var sorted = items.slice().sort(byLikes);
+      var shown = state.showAll ? sorted : sorted.filter(function (c, i) { return i < SHORT_LIST || mine[c.id] === 'right'; });
+      shown.forEach(function (c) {
         wrap.appendChild(venueCard(c, { likes: likes[c.id] || 0, mine: mine[c.id] }));
       });
+      var more = sorted.length - shown.length;
+      if (more > 0) {
+        wrap.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: 'Show ' + more + ' more',
+          onclick: function () { state.showAll = true; renderSpot(); } }));
+      }
       return wrap;
     }
 
@@ -428,10 +428,10 @@
   ['btn-open-app', 'btn-open-app-2', 'btn-open-app-3'].forEach(function (id) {
     $(id).href = token ? 'pullup://join/' + token : APP_STORE;
   });
-  $('btn-guest').addEventListener('click', function () { startJoin().catch(function (e) { console.error(e); fail(); }); });
   $('name-form').addEventListener('submit', function (e) {
     e.preventDefault();
-    var name = $('name-input').value.trim();
+    if (!sb) return fail("Joining on the web isn't available right now. Get the app to join.");
+    var name = state.guestName || $('name-input').value.trim();
     if (name) join(name);
   });
   $('btn-calendar').addEventListener('click', function () { logEvent('calendar_added', { source: 'web' }); });
@@ -453,6 +453,10 @@
         state.uid = session.user.id;
         state.planId = planId;
         try { return await loadPlan(); } catch (e) { console.error(e); }
+      }
+      if (session) {
+        var me = await sb.from('users').select('display_name').eq('id', session.user.id).maybeSingle();
+        state.guestName = (me.data && me.data.display_name) || null;
       }
       if (!state.preview && boot.failed !== false) {
         var r = await sb.rpc('invite_preview', { p_token: token });
